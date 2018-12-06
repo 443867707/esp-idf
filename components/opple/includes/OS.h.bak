@@ -1,0 +1,93 @@
+#ifndef __OS_H__
+#define __OS_H__
+
+
+/******************************************************************************************************************
+                            ABOUT 
+******************************************************************************************************************/
+/*
+    Used for :
+         Thread
+         Mutex/sem
+         Malloc/free
+         Systick
+**/
+
+/******************************************************************************************************************
+                            INCLUDES 
+******************************************************************************************************************/
+#include "Config.h"
+
+#if defined(PLATFORM_OS_LITEOS)
+    #include "los_sys.h"
+    #include "los_tick.h"
+    #include "los_task.ph"
+    #include "los_config.h"
+    #include "los_bsp_uart.h"
+    #include "los_sem.h"
+#elif defined(PLATFORM_OS_FREERTOS)
+    #include "freertos/FreeRTOS.h"
+		#include "freertos/task.h"
+#elif defined(PLATFORM_OS_NONE)
+    
+#endif
+/******************************************************************************************************************
+                            MUTEX 
+******************************************************************************************************************/
+#if MULTITASK_SUPPORT_ENABLE==1
+    #if defined(PLATFORM_OS_LITEOS)
+        #define T_MUTEX                     unsigned int               // xSemaphoreHandle
+        #define MUTEX_CREATE(mutex)         LOS_MuxCreate(&mutex)      // mutex=xSemaphoreCreateMutex()
+        #define MUTEX_LOCK(mutex,timeout)   LOS_MuxPend(mutex,timeout) // xSemaphoreTake((mutex),3)
+        #define MUTEX_UNLOCK(mutex)         LOS_MuxPost(mutex)         // xSemaphoreGive((mutex))
+    #elif defined(PLATFORM_OS_FREERTOS)
+        #define T_MUTEX                     xSemaphoreHandle    
+        #define MUTEX_CREATE(mutex)         mutex=xSemaphoreCreateMutex()
+        #define MUTEX_LOCK(mutex,timeout)           xSemaphoreTake((mutex),timeout)
+        #define MUTEX_UNLOCK(mutex)         xSemaphoreGive((mutex))
+    #elif defined(PLATFORM_OS_NONE)
+        #define T_MUTEX                     unsigned int         
+        #define MUTEX_CREATE(mutex)     
+        #define MUTEX_LOCK(mutex,timeout)    
+        #define MUTEX_UNLOCK(mutex) 
+    #endif
+#else
+    #define T_MUTEX                 unsigned int         
+    #define MUTEX_CREATE(mutex)     
+    #define MUTEX_LOCK(mutex,timeout)    
+    #define MUTEX_UNLOCK(mutex)   
+#endif
+
+
+/******************************************************************************************************************
+                            Thread 
+******************************************************************************************************************/
+
+
+
+
+
+/******************************************************************************************************************
+                            Systick 
+******************************************************************************************************************/
+
+
+
+
+
+/******************************************************************************************************************
+                            Other 
+******************************************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
+
+#endif
