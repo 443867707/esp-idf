@@ -71,6 +71,8 @@ typedef enum {
     ESP_PARTITION_SUBTYPE_DATA_NVS = 0x02,                                    //!< NVS partition
     ESP_PARTITION_SUBTYPE_DATA_COREDUMP = 0x03,                               //!< COREDUMP partition
     ESP_PARTITION_SUBTYPE_DATA_NVS_KEYS = 0x04,                               //!< Partition for NVS keys
+    ESP_PARTITION_SUBTYPE_DATA_LOG0 = 0x05,
+    ESP_PARTITION_SUBTYPE_DATA_LOG1 = 0x06,
 
     ESP_PARTITION_SUBTYPE_DATA_ESPHTTPD = 0x80,                               //!< ESPHTTPD partition
     ESP_PARTITION_SUBTYPE_DATA_FAT = 0x81,                                    //!< FAT partition

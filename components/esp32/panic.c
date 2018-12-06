@@ -44,6 +44,9 @@
 #if CONFIG_SYSVIEW_ENABLE
 #include "SEGGER_RTT.h"
 #endif
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "string.h"
 
 #if CONFIG_ESP32_APPTRACE_ONPANIC_HOST_FLUSH_TMO == -1
 #define APPTRACE_ONPANIC_HOST_FLUSH_TMO   ESP_APPTRACE_TMO_INFINITE
@@ -449,6 +452,220 @@ static void doBacktrace(XtExcFrame *frame)
     panicPutStr("\r\n\r\n");
 }
 
+#define STORAGE_NAMESPACE "panic"
+esp_err_t save_panic_occur(int8_t occur)
+{
+    nvs_handle my_handle;
+    esp_err_t err;
+    // Open
+    err = nvs_open("panic", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+		ets_printf("nvs_open panic error %x\r\n",err);
+		return err;
+    }
+    err = nvs_set_i8(my_handle, "occur", occur);
+    if (err != ESP_OK) {
+		ets_printf("nvs_set_str backtrace error %x\r\n",err);
+		return err;
+    }
+    // Commit
+    err = nvs_commit(my_handle);
+    if (err != ESP_OK){
+		ets_printf("nvs_commit error %x\r\n",err);
+		return err;
+    }
+    // Close
+    nvs_close(my_handle);
+    return ESP_OK;
+}
+
+esp_err_t print_panic_occur_saved(int8_t *occur)
+{
+    nvs_handle my_handle;
+    esp_err_t err;
+
+    // Open
+    err = nvs_open("panic", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK){
+		ets_printf("nvs_open panic error %x\r\n",err);
+		return err;
+    }
+	err = nvs_get_i8(my_handle, "occur", occur);
+	if (err != ESP_OK) {
+		ets_printf("nvs_get_i8 error %x\r\n",err);
+		return err;
+	}
+    // Close
+    nvs_close(my_handle);
+    return ESP_OK;
+}
+
+/* Save new run time value in NVS
+   by first reading a table of previously saved values
+   and then adding the new value at the end of the table.
+   Return an error if anything goes wrong
+   during this process.
+ */
+esp_err_t save_panic(int core_id, const char *inBuf)
+{
+    nvs_handle my_handle;
+    esp_err_t err;
+	static int8_t occur = 0;
+	char key[5]={0};
+    // Open
+    err = nvs_open("panic", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+		ets_printf("nvs_open panic error %x\r\n",err);
+		return err;
+    }
+	if(!occur){
+		nvs_erase_all(my_handle);
+	    // Write value including previously saved blob if available
+	    err = nvs_set_i8(my_handle, "occur", 1);
+	    if (err != ESP_OK) {
+			ets_printf("nvs_set_str backtrace error %x\r\n",err);
+			return err;
+	    }
+		occur = 1;
+	}
+	snprintf(key,5,"key%d",core_id);
+    err = nvs_set_str(my_handle, key, inBuf);
+    if (err != ESP_OK) {
+		ets_printf("nvs_set_str backtrace error %x\r\n",err);
+		return err;
+    }
+    // Commit
+    err = nvs_commit(my_handle);
+    if (err != ESP_OK){
+		ets_printf("nvs_commit error %x\r\n",err);
+		return err;
+    }
+    // Close
+    nvs_close(my_handle);
+    return ESP_OK;
+}
+esp_err_t erase_panic()
+{
+    nvs_handle my_handle;
+    esp_err_t err;
+
+	// Open
+	err = nvs_open("panic", NVS_READWRITE, &my_handle);
+	if (err != ESP_OK) {
+		ets_printf("nvs_open panic error %x\r\n",err);
+		return err;
+	}
+	nvs_erase_all(my_handle);
+    // Commit
+    err = nvs_commit(my_handle);
+    if (err != ESP_OK){
+		ets_printf("nvs_commit error %x\r\n",err);
+		return err;
+    }
+    // Close
+    nvs_close(my_handle);
+    return ESP_OK;
+}
+/* Read from NVS and print restart counter
+   and the table with run times.
+   Return an error if anything goes wrong
+   during this process.
+ */
+esp_err_t print_panic_saved(int core_id, char *outBuf)
+{
+    nvs_handle my_handle;
+    esp_err_t err;
+	char key[5]={0};
+    // Open
+    err = nvs_open("panic", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK){
+		ets_printf("nvs_open panic error %x\r\n",err);
+		return err;
+    }
+	size_t buf_len_needed;
+	snprintf(key,5,"key%d",core_id);
+	err = nvs_get_str(my_handle, key, NULL, &buf_len_needed);
+	if (err != ESP_OK) {
+		ets_printf("nvs_get_str backtrace1 [%s] error %x\r\n",key,err);
+		return err;
+	}
+	size_t buf_len_short = buf_len_needed;
+	err= nvs_get_str(my_handle, key, outBuf, &buf_len_short);
+	if (err != ESP_OK) {
+		ets_printf("nvs_get_str backtrace2 [%s] error %x\r\n",key,err);
+		return err;
+	}
+	//ets_printf(outBuf);
+    // Close
+    nvs_close(my_handle);
+    return ESP_OK;
+}
+
+static void doBacktrace1(XtExcFrame *frame, int core_id)
+{
+	char buf[1024] ={0};
+	int len = 0;
+    uint32_t i = 0, pc = frame->pc, sp = frame->a1;
+	int ret;
+	esp_err_t err;
+    int *regs = (int *)frame;
+    int x, y;
+    const char *sdesc[] = {
+        "PC      ", "PS      ", "A0      ", "A1      ", "A2      ", "A3      ", "A4      ", "A5      ",
+        "A6      ", "A7      ", "A8      ", "A9      ", "A10     ", "A11     ", "A12     ", "A13     ",
+        "A14     ", "A15     ", "SAR     ", "EXCCAUSE", "EXCVADDR", "LBEG    ", "LEND    ", "LCOUNT  "
+    };
+	
+    /* only dump registers for 'real' crashes, if crashing via abort()
+       the register window is no longer useful.
+    */
+    //regdump
+    if (!abort_called) {
+        len += snprintf(buf+len,1024,"Core%d register dump:\r\n",core_id);
+        for (x = 0; x < 24; x += 4) {
+            for (y = 0; y < 4; y++) {
+                if (sdesc[x + y][0] != 0) {
+                    len += snprintf(buf+len,1024,"%s: 0x%08x  ",sdesc[x + y], regs[x + y + 1]);
+                }
+            }
+			len += snprintf(buf+len,1024,"%s","\r\n");
+        }
+
+    }
+	//backtrace
+	len += snprintf(buf+len,1024,"%s","\r\nBacktrace:");
+    /* Do not check sanity on first entry, PC could be smashed. */
+    //putEntry(pc, sp);
+    
+    if (pc & 0x80000000) {
+        pc = (pc & 0x3fffffff) | 0x40000000;
+    }
+	len += snprintf(buf+len,1024," 0x%08x:0x%08x",pc,sp);
+
+    pc = frame->a0;
+    while (i++ < 100) {
+        uint32_t psp = sp;
+        if (!esp_stack_ptr_is_sane(sp) || i++ > 100) {
+            break;
+        }
+        sp = *((uint32_t *) (sp - 0x10 + 4));
+        //putEntry(pc - 3, sp); // stack frame addresses are return addresses, so subtract 3 to get the CALL address
+		len += snprintf(buf+len,1024," 0x%08x:0x%08x",pc - 3,sp);
+        pc = *((uint32_t *) (psp - 0x10));
+        if (pc < 0x40000000) {
+            break;
+        }
+    }
+	
+	spi_flash_guard_set(&g_flash_guard_no_os_ops);
+	ret = save_panic(core_id,buf);
+	if(ESP_OK != ret)
+		ets_printf("save_panic error\r\n");
+	//ret = print_panic_saved(buf);
+	//if(ESP_OK != ret)
+	//	ets_printf("print_panic_saved error\r\n");
+}
+
 /*
  * Dump registers and do backtrace.
  */
@@ -516,7 +733,9 @@ static void commonErrorHandler_dump(XtExcFrame *frame, int core_id)
 
     /* With windowed ABI backtracing is easy, let's do it. */
     doBacktrace(frame);
-
+	disableAllWdts();
+	doBacktrace1(frame, core_id);
+	reconfigureAllWdts();
 }
 
 /*
