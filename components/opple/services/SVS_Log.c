@@ -197,6 +197,12 @@ int AlarmDescIdGet(APP_LOG_T* log, ST_LOG_DESC * logDesc)
 	else if(10003 == *((U16 *)(&log->log[0]))){
 		logDesc->logDescId = 3;
 		sprintf(logDesc->log, "under current status %d value %d", log->log[2],*((U32 *)(&log->log[3])));		
+	}else if(10004 == *((U16 *)(&log->log[0]))){
+		logDesc->logDescId = 4;
+		sprintf(logDesc->log, "lamp on status %d", log->log[2]);		
+	}else if(10005 == *((U16 *)(&log->log[0]))){
+		logDesc->logDescId = 5;
+		sprintf(logDesc->log, "lamp off status %d", log->log[2]);		
 	}else{
 		logDesc->logDescId = 0;
 		sprintf(logDesc->log, "unknow alarm alarmId %d", *((U16 *)(&log->log[0])));		
@@ -585,7 +591,7 @@ int OppApsRecoderRead(S32 id,U8* data,U32* len)
 int OppApsRecoderWrite(U8* data,U32 len,U32* id)
 {
 	int res;
-	U8 d[16];
+	U8 d[16]={0};
 	U16 crc;
 
 	APSLOG_P_CHECK(data);

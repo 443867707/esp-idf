@@ -64,13 +64,16 @@ void RuntimeLoop(void)
 	{
 		OppLampCtrlHtimeAdd(1);
 		OppLampCtrlRtimeAdd(1);
+		OppLampCtrlHLtimeAdd(1);
+		OppLampCtrlLtimeAdd(1);
 		tick_start = OppTickCountGet();
 	}
-	//10分钟写一次flash
+	//1分钟写一次flash
 	if ((OppTickCountGet() - tick_start1) >= RUNTIME_SAVE_TO)
 	{
 		stRuntime.hisConsumption = ElecHisConsumptionGetInner();		
 		OppLampCtrlGetHtime(0, &stRuntime.hisTime);
+		OppLampCtrlGetHLtimeWithCrc8(0, &stRuntime.hisLightTime);
 		ret = ElecWriteFlash(&stRuntime);
 		if(OPP_SUCCESS == ret){
 			DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "ElecWriteFlash err %d\r\n", ret);
@@ -200,7 +203,8 @@ void ElecLoop(void)
 	{
 		stElecInfo.hisConsumption = ElecHisConsumptionGetInner();
 		OppLampCtrlGetHtime(0,&stElecInfo.hisTime);
-		DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "[tick:%d]write hisCons %u his hisTime %u to flash\r\n", OppTickCountGet(), stElecInfo.hisConsumption, stElecInfo.hisTime);
+		OppLampCtrlGetHLtimeWithCrc8(0,&stElecInfo.hisLightTime);
+		DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "[tick:%d]write hisCons %u hisTime %u hisLightTime %u to flash\r\n", OppTickCountGet(), stElecInfo.hisConsumption, stElecInfo.hisTime, stElecInfo.hisLightTime);
 		ret = ElecWriteFlash(&stElecInfo);
 		if(OPP_SUCCESS != ret){
 			DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "ElecWriteFlash fail ret %d\r\n", ret);
@@ -221,7 +225,8 @@ int ElecDoReboot(void)
 	}
 	stElecInfo.hisConsumption = ElecHisConsumptionGetInner();
 	OppLampCtrlGetHtime(0,&stElecInfo.hisTime);
-	DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "[tick:%d]write hisCons %u his hisTime %u to flash\r\n", OppTickCountGet(), stElecInfo.hisConsumption, stElecInfo.hisTime);
+	OppLampCtrlGetHLtimeWithCrc8(0,&stElecInfo.hisLightTime);
+	DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "[tick:%d]write hisCons %u hisTime %u hisLightTime %u to flash\r\n", OppTickCountGet(), stElecInfo.hisConsumption, stElecInfo.hisTime, stElecInfo.hisLightTime);
 	ret = ElecWriteFlash(&stElecInfo);
 	if(OPP_SUCCESS != ret){
 		DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "ElecWriteFlash fail ret %d\r\n", ret);
@@ -255,13 +260,22 @@ void ElecThread(void *pvParameter)
 		DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "elec read hisConsumption %d\r\n",stElecInfo.hisConsumption);
 		ElecHisConsumptionSetInner(stElecInfo.hisConsumption);
 		OppLampCtrlSetHtime(0,stElecInfo.hisTime);
+		ret = LightTimeCrcJudge(stElecInfo.hisLightTime);
+		if(OPP_SUCCESS != ret){
+			DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "ElecReadFlash history light time crc error\r\n");
+			OppLampCtrlSetHLtime(0,0);
+		}else{
+			OppLampCtrlSetHLtimeWithCrc8(0,stElecInfo.hisLightTime);
+		}
 	}else{
 		DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "ElecReadFlash fail ret %d\r\n", ret);
 		ElecHisConsumptionSetInner(0);
 		OppLampCtrlSetHtime(0,0);
+		OppLampCtrlSetHLtime(0,0);
 	}
 	ElecConsumptionSetInner(0);
 	OppLampCtrlSetRtime(0,0);
+	OppLampCtrlSetLtime(0,0);
 
 	while(1){
 		//ApsDevFeaturesGet(METER_FEATURE,&support);
@@ -515,6 +529,29 @@ int ElecConsumptionSetInner(U32 csp)
 	MUTEX_UNLOCK(g_stElecMutex);
 	
 	return csp;
+}
+
+/*unit: 100mW*/
+int ElecPowerGet(int target, unsigned int *power)
+{	
+	MUTEX_LOCK(g_stElecMutex, MUTEX_WAIT_ALWAYS);
+	//[code review power adjust !!!]	
+	if(!m_ucElecInit){
+		MUTEX_UNLOCK(g_stElecMutex);
+		return OPP_FAILURE;
+	}	
+	*power = g_stCurrElecric.power / 1000;	
+	MUTEX_UNLOCK(g_stElecMutex);
+	return OPP_SUCCESS;
+}
+
+/*unit: 100mW*/
+int ElecPowerSet(int target, unsigned int power)
+{
+	MUTEX_LOCK(g_stElecMutex, MUTEX_WAIT_ALWAYS);
+	g_stCurrElecric.power = power*1000;	
+	MUTEX_UNLOCK(g_stElecMutex);
+	return OPP_SUCCESS;
 }
 
 U32 ElecHisConsumptionGetInner(void)

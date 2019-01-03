@@ -21,6 +21,7 @@ typedef enum
     TEST_RES_UNKNOW=0,
     TEST_RES_SUCCESS,
     TEST_RES_FAIL,
+    TEST_RES_NO_RECORD,
 }EN_TEST_RESULT;
 
 extern void SvsTestInit(void);

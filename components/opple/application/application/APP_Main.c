@@ -83,7 +83,8 @@ int NbiotDevStateChg(void)
 	}else if(BC28_READY== devSt){
 		//ApsCoapReboot();
 		if(!g_ucDevInit){			
-			ApsCoapOceanconHeartOnline(CHL_NB,NULL);
+			//ApsCoapOceanconHeartOnline(CHL_NB,NULL);
+			ApsCoapOceanconOnline(CHL_NB,NULL);
 			log.id = NBNET_LOGID;
 			log.level = LOG_LEVEL_INFO;
 			log.module = MC_MODULE_LAMP;
@@ -92,8 +93,10 @@ int NbiotDevStateChg(void)
 			ApsDaemonLogReport(&log);
 			//OppCoapConfig();
 			DEBUG_LOG(DEBUG_MODULE_MAIN, DLL_INFO, "connect init clk src%d\r\n", TimeGetClockSrc());
-			if(NBIOT_CLK == TimeGetClockSrc() || ALL_CLK == TimeGetClockSrc())
-				TimeFromNbiotClock();
+			if(NBIOT_CLK == TimeGetClockSrc() || ALL_CLK == TimeGetClockSrc()){
+				if(OPP_SUCCESS != TimeFromNbiotClock())
+					TimeFromNbiotClock();
+			}
 			//NeulBc28QueryUestats(&g_stThisLampInfo.stNeulSignal);
 			//strcpy((char *)g_stThisLampInfo.stObjInfo.aucObjectSN, (char *)g_stThisLampInfo.stNeulSignal.imei);
 			//error cause g_ucNbiotDevState change

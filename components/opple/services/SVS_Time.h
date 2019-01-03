@@ -82,7 +82,8 @@ typedef struct{
 #define UNKNOW_CLK   0x04
 
 #define NBIOT_ATCLCK_NOTIME_TO    120000    /*two seconds*/
-#define NBIOT_ATCLCK_TO    7200000    /*two hour*/
+//#define NBIOT_ATCLCK_TO    7200000    /*two hour*/
+#define NBIOT_ATCLCK_TO    0xFFFFFFFF
 
 //extern static ST_TIME g_stTime;
 extern U8 g_ucInitTime;
@@ -113,6 +114,7 @@ int Zone(long double glong);
 int TimeRecvTimeSet(U8 hasRecv);
 U8 timeRecvTimeGet(void);
 U32 TimeRestore();
+time_t mk_time(int year,int mon,int day,int hour,int min,int sec);
 
 
 #endif

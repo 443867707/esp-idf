@@ -212,7 +212,15 @@ void LampObserver(t_event event,unsigned char src, const OPP_LIGHT_STATE * const
     DEBUG_LOG(DEBUG_MODULE_APSLAMP,DLL_INFO,"Observer event:%d,src:%d,onoff:%s,level:%d\r\n",event,src,state->u8OnOffState==0?"off":"on",state->u16BriLvl);
     // LampObserverNotifyWifi();
     // LampObserverNotifyNb();
-    
+    if(EVENT_SET_ONOFF == event)
+    	OppLampCtrlLightOnOff(state->u8OnOffState);
+	if(event == EVENT_SET_BRI){
+		if(state->u16BriLvl != 0){
+			OppLampCtrlLightOnOff(1);
+		}else{
+			OppLampCtrlLightOnOff(0);
+		}
+	}
     if(event == EVENT_SET_BRI && state->u16BriLvl != 0)
     {
         bri = state->u16BriLvl;

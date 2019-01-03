@@ -12,13 +12,17 @@ typedef struct
 #pragma pack()
 
 #define WIFICONFIG_ID    0
+#define APSTART_TO       1800000
+#define READIMEI_TO      15000
 
 extern void ApsWifiInit(void);
 extern void telnetTask(void *data);
 //extern void WiFiThread(void *pvParameter);
-int ApsWifiConfig(char * ssid, char * pass);
+int ApsWifiStaConfig(char * ssid, char * pass);
+int ApsWifiApConfig(char * ssid, char * pass);
 int ApsWifiConfigWithoutStart(char * ssid, char * pass);
 void ApsWifiStopStart(wifi_config_t* wifi_config);
+void ApsWifiStopStart1(int flag);
 int ApsWifiConfigRead(ST_WIFI_CONFIG * pstWifiConfig);
 int ApsWifiConfigWrite(ST_WIFI_CONFIG * pstWifiConfig);
 int ApsWifiConfigReadFromFlash(ST_WIFI_CONFIG * pstWifiConfig);
@@ -27,7 +31,7 @@ int ApsGetWifiPower(float * power);
 int ApsGetWifiMac(unsigned char *mac);
 int ApsWifiRestore(void);
 int ApsWifiConnect(uint8_t bssid[]);
-
+void wifi_init_sta();
 
 
 #endif

@@ -37,6 +37,7 @@
 #include "rom/rtc.h"
 #include "SVS_Test.h"
 #include "LightBri.h"
+#include "SVS_Ota.h"
 
 #define mymalloc  malloc
 #define myfree    free
@@ -74,7 +75,10 @@ static U32 g_iReTick = 0;
 static U32 g_iRebootTick = 0;
 static U32 g_iAttachTick = 0;
 static U32 g_iWifiConTick = 0;
-ST_OPP_OTA_PROC g_stOtaProcess;
+ST_OPP_OTA_PROC g_stOtaProcess={
+	.state = OTA_WAIT,
+	.error = OTA_NO_ERR
+};
 static t_queue queue_qlog;
 static U8 queue_qlog_buf[sizeof(ST_LOG_QUERY_REPORT)*QLOG_QUEUE_MAX];
 static U8 g_isSupportRetry = 1;
@@ -209,6 +213,9 @@ const ST_PROP aucProperty[] = {
 	{PROP_SAVEHECTO, "saveHecTo", INT_T, R, NULL},
 	{PROP_ONLINETO, "onlineTo", INT_T, R, NULL},
 	{PROP_BC28PARA, "nbPara", OBJ_T, R|W, NULL},
+	{PROP_ACTTIME, "actTime", STR_T, R|W, NULL},
+	{PROP_OV,"ov", INT_T, R|W, NULL},
+	{PROP_HV,"hv", OBJ_T, R|W, NULL}
 };
 
 const ST_REBOOT_FUNC g_astRebootFunc[] = {
@@ -229,6 +236,8 @@ const ST_FASTALARM_PARA g_stFastAlarmPara[] = {
 	{.alarmId = UNDER_VOLALARMID, .resId = RSC_VOLT,.defaultIdx=UNDER_VOL_ALARM_IDX, .alarmDesc="under voltage"},
 	{.alarmId = OVER_CURALARMID, .resId = RSC_CURRENT,.defaultIdx=OVER_CUR_ALARM_IDX, .alarmDesc="over current"},
 	{.alarmId = UNDER_CURALARMID, .resId = RSC_CURRENT,.defaultIdx=UNDER_CUR_ALARM_IDX, .alarmDesc="under current"},
+	{.alarmId = EXEP_ONALARMID, .resId = RSC_EXON,.defaultIdx=EXEP_ON_ALARM_IDX, .alarmDesc="exep on"},
+	{.alarmId = EXEP_OFFALARMID, .resId = RSC_EXOFF,.defaultIdx=EXEP_OFF_ALARM_IDX, .alarmDesc="exep off"},
 };
 
 LIST_HEAD(listc,_list_entry) list_coap;
@@ -955,11 +964,12 @@ int ApsCoapOtaProcessRsp(ST_OPP_OTA_PROC * pstOtaProcess)
 		cJSON_Delete(root);
 		return OPP_FAILURE;
 	}	
-    cJSON_AddItemToObject(root, "cmdData", cmdData);
-    cJSON_AddItemToObject(cmdData, "err", cJSON_CreateNumber(pstOtaProcess->error));
+    cJSON_AddItemToObject(root, "cmdData", cmdData);	
+	//if(OTA_RSP == pstOtaProcess->type)
+    	cJSON_AddItemToObject(cmdData, "err", cJSON_CreateNumber(pstOtaProcess->error));
     cJSON_AddItemToObject(cmdData, "status", cJSON_CreateNumber(pstOtaProcess->state));
     cJSON_AddItemToObject(cmdData, "process", cJSON_CreateNumber(pstOtaProcess->process));
-	cJSON_AddItemToObject(cmdData, "version", cJSON_CreateString(pstOtaProcess->version));
+	//cJSON_AddItemToObject(cmdData, "version", cJSON_CreateString(pstOtaProcess->version));
 
 	ret = JsonCompres(root, (char *)coapmsgTx, &outLength);
 	if(OPP_SUCCESS != ret){
@@ -1011,7 +1021,7 @@ int ApsCoapRIRsp(U8 dstChl, unsigned char *dstInfo, U8 isNeedRsp, U32 reqId, U8 
 	ST_OPP_LAMP_CURR_ELECTRIC_INFO stElecInfo;
 	U8 lampSwitch;
 	U16 usBri;
-	U32 rTime, hTime;
+	U32 rTime, hTime, lTime, hlTime;
 	long double lat,lng;
 	char *sArgv[MAX_ARGC];
 	char *rArgv[MAX_ARGC];
@@ -1142,6 +1152,8 @@ int ApsCoapRIRsp(U8 dstChl, unsigned char *dstInfo, U8 isNeedRsp, U32 reqId, U8 
 	//runtime
 	OppLampCtrlGetRtime(0,&rTime);
 	OppLampCtrlGetHtime(0,&hTime);
+	OppLampCtrlGetLtime(0,&lTime);
+	OppLampCtrlGetHLtime(0,&hlTime);
     comObj =  cJSON_CreateObject();
 	if(NULL == comObj){
 		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
@@ -1152,6 +1164,8 @@ int ApsCoapRIRsp(U8 dstChl, unsigned char *dstInfo, U8 isNeedRsp, U32 reqId, U8 
 	cJSON_AddItemToObject(cmdData, "runtime",comObj);
 	cJSON_AddItemToObject(comObj, "hTime", cJSON_CreateNumber(hTime)); 						
 	cJSON_AddItemToObject(comObj, "rTime", cJSON_CreateNumber(rTime));							
+	cJSON_AddItemToObject(comObj, "hlTime", cJSON_CreateNumber(hlTime)); 						
+	cJSON_AddItemToObject(comObj, "lTime", cJSON_CreateNumber(lTime));
 	//nb signal
 	ret = sendEvent(UESTATE_EVENT,RISE_STATE,sArgc,sArgv);
 	ret = recvEvent(UESTATE_EVENT,&rArgc,rArgv,EVENT_WAIT_DEFAULT);
@@ -1608,7 +1622,7 @@ void ApsCoapPropProcR(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 	//ST_OPP_LAMP_LOCATION stLocation;
 	U16 usBri;
 	U8 lampSwitch;
-	U32 hTime = 0, rTime = 0;
+	U32 hTime = 0, rTime = 0, hlTime = 0, lTime = 0;
 	long double lat, lng;
 	char *sArgv[MAX_ARGC];
 	char *rArgv[MAX_ARGC];
@@ -1663,6 +1677,12 @@ void ApsCoapPropProcR(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 			OppLampCtrlGetSwitch(0, &lampSwitch);
 			cJSON_AddItemToObject(propRe, "switch", cJSON_CreateNumber(lampSwitch));
 		}
+		else if(0 == strcmp(object->valuestring, "actTime"))
+		{
+			char actTime[ACTTIME_LEN] = {0};
+			OppLampActTimeGet(actTime);
+			cJSON_AddItemToObject(propRe, "actTime", cJSON_CreateString(actTime));
+		}		
 		else if(0 == strcmp(object->valuestring, "bri"))
 		{
 			OppLampCtrlGetBri(0, &usBri);
@@ -1671,7 +1691,8 @@ void ApsCoapPropProcR(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 		else if(0 == strcmp(object->valuestring, "runtime"))
 		{
 			/*code review*/
-			if(OPP_SUCCESS == OppLampCtrlGetHtime(0,&hTime) && OPP_SUCCESS == OppLampCtrlGetRtime(0,&rTime)){
+			if(OPP_SUCCESS == OppLampCtrlGetHtime(0,&hTime) && OPP_SUCCESS == OppLampCtrlGetRtime(0,&rTime)
+				&& OPP_SUCCESS == OppLampCtrlGetHLtime(0,&hlTime) && OPP_SUCCESS == OppLampCtrlGetLtime(0,&lTime)){
 				comObj = cJSON_CreateObject();
 				if(NULL == comObj){
 					MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
@@ -1681,6 +1702,8 @@ void ApsCoapPropProcR(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 				cJSON_AddItemToObject(propRe, "runtime",comObj);
 				cJSON_AddItemToObject(comObj, "hTime", cJSON_CreateNumber(hTime));
 				cJSON_AddItemToObject(comObj, "rTime", cJSON_CreateNumber(rTime));
+				cJSON_AddItemToObject(comObj, "hlTime", cJSON_CreateNumber(hlTime));
+				cJSON_AddItemToObject(comObj, "lTime", cJSON_CreateNumber(lTime));
 			}
 		}				
 		else if(0 == strcmp(object->valuestring, "tElec"))
@@ -1905,6 +1928,8 @@ void ApsCoapPropProcR(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 			//runtime
 			OppLampCtrlGetHtime(0,&hTime);
 			OppLampCtrlGetRtime(0,&rTime);
+			OppLampCtrlGetHLtime(0,&hlTime);
+			OppLampCtrlGetLtime(0,&lTime);
 			subObj=cJSON_CreateObject();
 			if(NULL == subObj){
 				MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
@@ -1914,6 +1939,8 @@ void ApsCoapPropProcR(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 			cJSON_AddItemToObject(comObj, "runtime",subObj);
 			cJSON_AddItemToObject(subObj, "hTime", cJSON_CreateNumber(hTime));			
 			cJSON_AddItemToObject(subObj, "rTime", cJSON_CreateNumber(rTime));
+			cJSON_AddItemToObject(subObj, "hlTime", cJSON_CreateNumber(hlTime));			
+			cJSON_AddItemToObject(subObj, "lTime", cJSON_CreateNumber(lTime));
 			//elec
 			ElecGetElectricInfo(&stElecInfo);
 			subObj=cJSON_CreateObject();
@@ -2337,6 +2364,21 @@ void ApsCoapPropProcR(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 			SvsTestInfoGet(TEST_REMAIN3,&result);
 			cJSON_AddItemToObject(propRe, "test8", cJSON_CreateNumber(result));
 		}
+		else if(0 == strcmp(object->valuestring, "ov")){
+			unsigned int version;
+			ret = OriginalVersinGet(&version);
+			if(OPP_SUCCESS == ret){
+				cJSON_AddItemToObject(propRe, "ov", cJSON_CreateNumber(version));
+			}
+		}
+		else if(0 == strcmp(object->valuestring, "hv")){
+			unsigned int hv[15],len=15;
+			ret = HistoryVersionGet(hv,&len);
+			if(OPP_SUCCESS == ret){
+				cJSON_AddItemToObject(propRe, "hv", cJSON_CreateIntArray((int *	)hv,len));
+			}
+		}
+		
 		////////////////设备信息/////////////////////////////
 		else if(0 == strcmp(object->valuestring, "product"))
 		{
@@ -2520,7 +2562,7 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 	cJSON *object, *subObj;
 	char *p;
 	int i = 0;
-	int temp = -1, dimType = -1, /*period = -1,*/ rTime = -1, consumption = -1;
+	int temp = -1, dimType = -1, lTime = -1, rTime = -1, consumption = -1, sw = -1;
 	ST_CONFIG_PARA para;
 	ST_NB_CONFIG stNbConfig;
 	ST_IOT_CONFIG stIotConfig;
@@ -2536,7 +2578,7 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 	ST_LOCSRC stLocSrc;
 	ST_CLKSRC stClkSrc;
 	ST_DEV_CONFIG stDevConfig;
-	
+	time_t actSec = 0;
 	//for(i=0; i<sizeof(aucProperty)/sizeof(ST_PROP);i++)
 	cJSON_ArrayForEach(object,prop)
 	{		
@@ -2563,7 +2605,7 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 			if(0 == strcmp(aucProperty[i].name, "runtime")){
 				subObj = cJSON_GetObjectItem(object,"rTime");
 				if(NULL == subObj){
-					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid); \
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid);
 					return;
 				}
 				if(cJSON_Number != subObj->type){
@@ -2585,7 +2627,7 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 				rTime = subObj->valueint;
 				subObj = cJSON_GetObjectItem(object,"hTime");
 				if(NULL == subObj){
-					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid); \
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid);
 					return;
 				}
 				if(cJSON_Number != subObj->type){
@@ -2604,14 +2646,60 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_TYPE_FLOAT_ERR,JSON_TYPE_FLOAT_ERR_DESC,NULL,mid);
 					return;
 				}
-				updateHisTime = 1;
+				//updateHisTime = 1;
 				//stRuntime.hisTime = temp;
 				stElecRConfig.hisTime = subObj->valueint;
+				subObj = cJSON_GetObjectItem(object,"lTime");
+				if(NULL == subObj){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(cJSON_Number != subObj->type){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_TYPE_NUMBER_ERR,JSON_TYPE_NUMBER_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(subObj->valueint < 0){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,VAL_L_ERR,VAL_L_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(subObj->valuedouble > MAX_LIGHT_TIME){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,LT_G_ERR,LT_G_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(subObj->valueint != subObj->valuedouble){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_TYPE_FLOAT_ERR,JSON_TYPE_FLOAT_ERR_DESC,NULL,mid);
+					return;
+				}
+				lTime = subObj->valueint;
+				subObj = cJSON_GetObjectItem(object,"hlTime");
+				if(NULL == subObj){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(cJSON_Number != subObj->type){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_TYPE_NUMBER_ERR,JSON_TYPE_NUMBER_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(subObj->valueint < 0){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,VAL_L_ERR,VAL_L_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(subObj->valuedouble > MAX_LIGHT_TIME){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,LT_G_ERR,LT_G_ERR_DESC,NULL,mid);
+					return;
+				}
+				if(subObj->valueint != subObj->valuedouble){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_TYPE_FLOAT_ERR,JSON_TYPE_FLOAT_ERR_DESC,NULL,mid);
+					return;
+				}
+				updateHisTime = 1;
+				//stRuntime.hisTime = temp;
+				stElecRConfig.hisLightTime = subObj->valueint;
 			}
 			else if(0 == strcmp(aucProperty[i].name, "ecInfo")){
 				subObj = cJSON_GetObjectItem(object,"EC");
 				if(NULL == subObj){
-					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid); \
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid);
 					return;
 				}
 				if(cJSON_Number != subObj->type){
@@ -2633,7 +2721,7 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 				consumption = subObj->valueint;
 				subObj = cJSON_GetObjectItem(object,"HEC");
 				if(NULL == subObj){
-					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid); \
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,JSON_NODE_ERR,JSON_NODE_ERR_DESC,NULL,mid);
 					return;
 				}
 				if(cJSON_Number != subObj->type){
@@ -2839,10 +2927,24 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 				}
 				NeulBc28SetParaToRam(enable,earfcn,band);
 			}
+			else if(0 == strcmp(aucProperty[i].name, "hv")){
+				int num;
+				num = cJSON_GetArraySize(object);
+				if(1 != num){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,HV_ELE_NUM_ERR,HV_ELE_NUM_ERR_DESC,NULL,mid);
+					return;
+				}
+				//printf("cJSON_GetArrayItem(object,0)->valueint %d\r\n",cJSON_GetArrayItem(object,0)->valueint);
+				ret = HistoryVersionPush(cJSON_GetArrayItem(object,0)->valueint);
+				if(OPP_SUCCESS != ret){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,HV_SET_ERR,HV_SET_ERR_DESC,NULL,mid);
+					return;
+				}
+			}
 		}
 		else if(STR_T == aucProperty[i].type){
-			DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"%s %d\r\n", aucProperty[i].name, temp);
 			p = object->valuestring;
+			DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"%s %s\r\n", aucProperty[i].name, p);
 			if(0 != strlen(p))
 			{
 				if(0 == strcmp(aucProperty[i].name, "ocIp")){
@@ -2875,6 +2977,20 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 					//stNbConfig.apn[strlen(p)] = '\0';
 					updateNbConfig = 1;
 				}
+				else if(0 == strcmp(aucProperty[i].name, "actTime")){
+					U8 year,month,day,hour,min,sec;
+					if(strlen(p)!=17){
+						ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,ACTTIME_LEN_ERR,ACTTIME_LEN_ERR_DESC,NULL,mid);
+						return;
+					}
+					ret = sscanf(p,"%hhu-%hhu-%hhu %hhu:%hhu:%hhu",&year,&month,&day,&hour,&min,&sec);
+					if(6 !=ret){
+						ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,ACTTIME_FORMAT_ERR,ACTTIME_FORMAT_ERR_DESC,NULL,mid);
+						return;
+					}
+					actSec = mk_time(year+2000,month,day,hour,min,sec);
+					OppLampActTimeSet(p);
+				}
 			}
 		}else if(INT_T == aucProperty[i].type){
 			if(cJSON_Number != object->type){
@@ -2902,10 +3018,12 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 						ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,SWITCH_VAL_ERR,SWITCH_VAL_ERR_DESC,NULL,mid);
 						return;
 					}
+					sw = temp; 
+					/*
 					if(dstChl == CHL_NB)
 						OppLampCtrlOnOff(NB_SRC, temp);
 					else if(dstChl == CHL_WIFI)
-						OppLampCtrlOnOff(WIFI_SRC, temp);
+						OppLampCtrlOnOff(WIFI_SRC, temp);*/
 				}
 			}
 			else if(0 == strcmp(aucProperty[i].name, "bri")){
@@ -3143,6 +3261,13 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 					return;
 				}
 			}
+			else if(0 == strcmp(aucProperty[i].name, "ov")){
+				ret = OriginalVersionSet(temp);
+				if(OPP_SUCCESS != ret){
+					ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,OV_SET_ERR,OV_SET_ERR_DESC,NULL,mid);
+					return;
+				}
+			}			
 		}
 
 	}					
@@ -3161,9 +3286,12 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 			}
 			OppLampCtrlSetHtime(0,stElecRConfig.hisTime);
 			OppLampCtrlSetRtime(0,rTime);
+			OppLampCtrlSetHLtime(0,stElecRConfig.hisLightTime);
+			OppLampCtrlSetLtime(0,lTime);
 		}
 		if(updateHisEc){
 			OppLampCtrlGetHtime(0,&stElecConfig.hisTime);
+			OppLampCtrlGetHLtimeWithCrc8(0,&stElecConfig.hisTime);
 			ret = ElecWriteFlash(&stElecConfig);
 			if(OPP_SUCCESS != ret){
 				ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,WRITE_FLASH_ERR,WRITE_FLASH_ERR_DESC,NULL,mid);
@@ -3254,6 +3382,27 @@ void ApsCoapPropProcW(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 				return;
 			}
 			NeulBc28SetConfig(&stNbConfig);
+		}
+		if(sw != -1 && actSec != 0){
+			ST_TIME time;
+			time_t curSec;
+			U32 delaySec;
+			Opple_Get_RTC(&time);
+			curSec = mk_time(time.Year,time.Month,time.Day,time.Hour,time.Min,time.Sencond);
+			if(curSec >= actSec){
+				if(dstChl == CHL_NB)
+					OppLampCtrlOnOff(NB_SRC, temp);
+				else if(dstChl == CHL_WIFI)
+					OppLampCtrlOnOff(WIFI_SRC, temp);
+			}else{
+				delaySec = actSec - curSec;
+				OppLampDelayOnOff(dstChl,sw,delaySec);
+			}
+		}else if(sw != -1 && actSec == 0){
+			if(dstChl == CHL_NB)
+				OppLampCtrlOnOff(NB_SRC, sw);
+			else if(dstChl == CHL_WIFI)
+				OppLampCtrlOnOff(WIFI_SRC, sw);
 		}
 		ApsCoapRsp(dstChl,dstInfo,CMD_MSG,isNeedRsp,reqId,PROP_SERVICE,0,SUCCESS,NULL,NULL,mid);
 
@@ -4046,6 +4195,7 @@ int ApsCoapAlarmFastCfgProc(unsigned char dstChl, unsigned char *dstInfo, unsign
 	}
 	cJSON_AddItemToObject(cmdDataRe, "items", items);
 
+	memset(&config,0,sizeof(AD_CONFIG_T));
 	for(i=0;i<arraySize;i++){
 		item = cJSON_GetArrayItem(alarms,i);
 		APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,ALARMFASTCFG_CMDID,item,"alarmId",mid);
@@ -4070,6 +4220,14 @@ int ApsCoapAlarmFastCfgProc(unsigned char dstChl, unsigned char *dstInfo, unsign
 			id = UNDER_CUR_ALARM_IDX;
 			config.resource = RSC_CURRENT;
 			config.alarmIf = AI_LT;
+		}else if(EXEP_ONALARMID == alarmId){
+			id = EXEP_ON_ALARM_IDX;
+			config.resource = RSC_EXON;
+			config.alarmIf = AI_GT;
+		}else if(EXEP_OFFALARMID == alarmId){
+			id = EXEP_OFF_ALARM_IDX;
+			config.resource = RSC_EXOFF;
+			config.alarmIf = AI_GT;
 		}else{
 			cJSON_Delete(cmdDataRe);
 			ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,ALARMFASTCFG_CMDID,reqId,0,ALARM_FAST_CFG_INVALID_ALARMID_ERR,ALARM_FAST_CFG_INVALID_ALARMID_ERR_DESC,NULL,mid);
@@ -4152,7 +4310,7 @@ int ApsCoapAlarmFastCfgAllProc(unsigned char dstChl, unsigned char *dstInfo, uns
 		return OPP_FAILURE;
 	}
 	cJSON_AddItemToObject(cmdDataRe, "items", items);
-
+	memset(&config,0,sizeof(AD_CONFIG_T));
 	for(i=0;i<arraySize;i++){
 		item = cJSON_GetArrayItem(alarms,i);
 		APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,ALARMFASTCFGALL_CMDID,item,"alarmId",mid);
@@ -4181,6 +4339,14 @@ int ApsCoapAlarmFastCfgAllProc(unsigned char dstChl, unsigned char *dstInfo, uns
 			id = UNDER_CUR_ALARM_IDX;
 			config.resource = RSC_CURRENT;
 			config.alarmIf = AI_LT;
+		}else if(EXEP_ONALARMID == alarmId){
+			id = EXEP_ON_ALARM_IDX;
+			config.resource = RSC_EXON;
+			config.alarmIf = AI_GT;
+		}else if(EXEP_OFFALARMID == alarmId){
+			id = EXEP_OFF_ALARM_IDX;
+			config.resource = RSC_EXOFF;
+			config.alarmIf = AI_GT;
 		}else{
 			cJSON_Delete(cmdDataRe);
 			ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,ALARMFASTCFGALL_CMDID,reqId,0,ALARM_FAST_CFG_INVALID_ALARMID_ERR,ALARM_FAST_CFG_INVALID_ALARMID_ERR_DESC,NULL,mid);
@@ -5144,6 +5310,29 @@ int ApsCoapHeartbeatAckCmdProc(unsigned char dstChl, unsigned char *dstInfo, uns
 	return 0;
 }
 
+int ApsCoapOnlineAckCmdProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char isNeedRsp, cJSON *json, U32 mid)
+{
+	int reqId = 0;
+	//int ret;
+	ST_RHB_ENTRY *pstRhb;
+
+	APS_COAP_NULL_POINT_CHECK(json);
+
+	APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,ONLINEACK_CMDID,json,"reqId",mid);		
+	reqId = cJSON_GetObjectItem(json, "reqId")->valueint;
+	MUTEX_LOCK(m_ulCoapRHB,MUTEX_WAIT_ALWAYS);
+	LIST_FOREACH(pstRhb, &list_rhb, elements){
+		if(pstRhb->reqId == reqId)
+			LIST_REMOVE(pstRhb,elements);
+	}
+	MUTEX_UNLOCK(m_ulCoapRHB);
+	ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,ONLINEACK_CMDID,reqId,0,0,NULL,NULL,mid);
+	/*retryHeartbeat = 0;
+	recvHeartAck = 1;*/
+	
+	return 0;
+}
+
 int ApsCoapRestoreFactoryProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char isNeedRsp, cJSON *json, U32 mid)
 {
 	int reqId = 0;
@@ -5171,6 +5360,7 @@ int ApsCoapRestoreFactoryProc(unsigned char dstChl, unsigned char *dstInfo, unsi
 	//restore runtime and consumption
 	stElecConfig.hisTime = 0;
 	stElecConfig.hisConsumption = 0;
+	stElecConfig.hisLightTime = 0;
 	ret = ElecWriteFlash(&stElecConfig);
 	if(OPP_SUCCESS != ret){
 		ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,RESTOR_CMDID,reqId,0,RESTORE_ELEC_ERR,RESTORE_ELEC_ERR_DESC,NULL,mid);
@@ -5179,6 +5369,8 @@ int ApsCoapRestoreFactoryProc(unsigned char dstChl, unsigned char *dstInfo, unsi
 	ElecHisConsumptionSet(0);
 	OppLampCtrlSetRtime(0,0);
 	OppLampCtrlSetHtime(0,0);	
+	OppLampCtrlSetLtime(0,0);
+	OppLampCtrlSetHLtime(0,0);	
 	//restore nbiot
 	ret = NeulBc28RestoreFactory();
 	if(OPP_SUCCESS != ret){
@@ -6036,6 +6228,19 @@ int ApsCoapOtaProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char i
 
 	APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,OTAUDP_CMDID,json,"reqId",mid);
 	reqId = cJSON_GetObjectItem(json, "reqId")->valueint;
+	if(NULL == cJSON_GetObjectItem(json, "cmdData")){
+		g_stOtaProcess.type = OTA_RSP;
+		g_stOtaProcess.reqId = reqId;
+		g_stOtaProcess.process = OtaProg();
+		//g_stOtaProcess.state = OTA_DOWNLOADING;
+		g_stOtaProcess.mid = mid;
+		g_stOtaProcess.dstChl = dstChl;
+		//g_stOtaProcess.error = 0;
+		if(dstInfo && memcmp(dstInfo,zeroInfo,sizeof(zeroInfo)))
+			memcpy(g_stOtaProcess.dstInfo,dstInfo,sizeof(g_stOtaProcess.dstInfo));
+		ApsCoapOtaProcessRsp(&g_stOtaProcess);
+		return OPP_SUCCESS;
+	}
 	APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,OTAUDP_CMDID,json,"cmdData",mid);
 	cmdData = cJSON_GetObjectItem(json, "cmdData");
 	//type = cJSON_GetObjectItem(cmdData, "type")->valueint;
@@ -6047,14 +6252,18 @@ int ApsCoapOtaProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char i
 	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"url:%s", cJSON_GetObjectItem(cmdData, "url")->valuestring);
 	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"version:%s", cJSON_GetObjectItem(cmdData, "version")->valuestring);
 	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"port:%d", port);
-	//port = cJSON_GetObjectItem(cmdData, "port")->valueint;
+	//port = cJSON_GetObjectItem(cmdData, "port")->valueint;	
+	if(OTA_SUCCESS!=g_stOtaProcess.state && OTA_FAIL!=g_stOtaProcess.state && OTA_WAIT!=g_stOtaProcess.state){
+		ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,OTAUDP_CMDID,reqId,0,OTA_UPGRADING_ERR,OTA_UPGRADING_ERR_DESC,NULL,mid);
+		return OPP_SUCCESS;
+	}
 	g_stOtaProcess.type = OTA_RSP;
 	g_stOtaProcess.reqId = reqId;
 	g_stOtaProcess.process = 0;
-	g_stOtaProcess.state = 0;
+	g_stOtaProcess.state = OTA_DOWNLOADING;
 	g_stOtaProcess.mid = mid;
 	g_stOtaProcess.dstChl = dstChl;
-	g_stOtaProcess.error = 0;
+	g_stOtaProcess.error = OTA_NO_ERR;
 	if(dstInfo && memcmp(dstInfo,zeroInfo,sizeof(zeroInfo)))
 		memcpy(g_stOtaProcess.dstInfo,dstInfo,sizeof(g_stOtaProcess.dstInfo));
 	STRNCPY(g_stOtaProcess.version, cJSON_GetObjectItem(cmdData, "version")->valuestring, OTA_VER_LEN);
@@ -6496,9 +6705,12 @@ void ApsCoapFuncProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char
 			else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, NBCMD_CMDID)){
 				ApsCoapNbCmdProc(dstChl,dstInfo,isNeedRsp,json,mid);
 			}
-			else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, HEARTBEATACK_CMDID)){
+			/*else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, HEARTBEATACK_CMDID)){
 				ApsCoapHeartbeatAckCmdProc(dstChl,dstInfo,isNeedRsp,json,mid);
-			}
+			}*/
+			else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, ONLINEACK_CMDID)){
+				ApsCoapOnlineAckCmdProc(dstChl,dstInfo,isNeedRsp,json,mid);
+			}			
 			else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, LSVOL_CMDID)){
 				ApsCoapLSVolProc(dstChl,dstInfo,isNeedRsp,json,mid);
 			}
@@ -6991,7 +7203,7 @@ int ApsCoapOceanconHeart(U8 dstChl)
 	U16 usBri = 0;
 	long double lat, lng;
 	ST_OPP_LAMP_CURR_ELECTRIC_INFO stElecInfo;
-	U32 rTime,hTime;
+	U32 rTime,hTime,lTime,hlTime;
 	char buffer[64] = {0};
 	ST_NEUL_DEV *pstNeulDev = NULL;
 	int ret;
@@ -7068,6 +7280,8 @@ int ApsCoapOceanconHeart(U8 dstChl)
 	//runtime
 	OppLampCtrlGetRtime(0,&rTime);
 	OppLampCtrlGetHtime(0,&hTime);
+	OppLampCtrlGetLtime(0,&lTime);
+	OppLampCtrlGetHLtime(0,&hlTime);
 	comObj =  cJSON_CreateObject();
 	if(NULL == comObj){
 		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
@@ -7078,6 +7292,8 @@ int ApsCoapOceanconHeart(U8 dstChl)
 	cJSON_AddItemToObject(cmdData, "runtime",comObj);
 	cJSON_AddItemToObject(comObj, "hTime", cJSON_CreateNumber(hTime)); 						
 	cJSON_AddItemToObject(comObj, "rTime", cJSON_CreateNumber(rTime));
+	cJSON_AddItemToObject(comObj, "hlTime", cJSON_CreateNumber(hlTime)); 						
+	cJSON_AddItemToObject(comObj, "lTime", cJSON_CreateNumber(lTime));
 	//nb signal
 	ret = sendEvent(UESTATE_EVENT,RISE_STATE,sArgc,sArgv);
 	ret = recvEvent(UESTATE_EVENT,&rArgc,rArgv,EVENT_WAIT_DEFAULT);
@@ -7143,6 +7359,128 @@ int ApsCoapOceanconHeartOnline(U8 dstChl, unsigned char *dstInfo)
 	return OPP_SUCCESS;
 }
 
+/*if dstChl==wifi, dstInfo must be specified else no need to specify*/
+int ApsCoapOceanconOnline(U8 dstChl, unsigned char *dstInfo)
+{
+	U8 coapmsgTx[JSON_S_MAX_LEN] = {0};
+    cJSON * root, *cmdData, *comObj;
+	U16 outLength = 0;
+	int reqId;
+	ST_RHB_ENTRY *pstRhb;
+	U8 zeroInfo[0] = {0};
+	U8 lampSwitch = 0;
+	U16 usBri = 0;
+	ST_OPP_LAMP_CURR_ELECTRIC_INFO stElecInfo;
+	U32 rTime,hTime,lTime,hlTime;
+	char buffer[64] = {0};
+	ST_NEUL_DEV stNeulDev;
+	int ret;
+	
+	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"ApsCoapOceanconOnline\r\n");
+	root =  cJSON_CreateObject();
+	if(NULL == root){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconOnline create <root> object error\r\n");
+		return OPP_FAILURE;
+	}	
+	cJSON_AddItemToObject(root, "reqId", cJSON_CreateNumber(reqId = OppCoapReqIdGen()));
+    cJSON_AddItemToObject(root, "cmdId", cJSON_CreateString(ONLINE_CMDID));
+	cmdData =  cJSON_CreateObject();
+	if(NULL == cmdData){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconOnline create <cmdData> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}
+	cJSON_AddItemToObject(root, "cmdData", cmdData);
+	snprintf(buffer, 5, "%04x", PRODUCTSKU);
+    cJSON_AddItemToObject(cmdData, "sku", cJSON_CreateString(buffer));
+	snprintf(buffer, 5, "%04x", PRODUCTCLASS);
+    cJSON_AddItemToObject(cmdData, "clas", cJSON_CreateString(buffer));
+    cJSON_AddItemToObject(cmdData, "ver", cJSON_CreateNumber(OPP_LAMP_CTRL_CFG_DATA_VER));
+	OppLampCtrlGetSwitch(0, &lampSwitch);
+    cJSON_AddItemToObject(cmdData, "switch", cJSON_CreateNumber(lampSwitch));
+	OppLampCtrlGetBri(0,&usBri);
+    cJSON_AddItemToObject(cmdData, "bri", cJSON_CreateNumber(usBri));
+
+	//elec
+	ElecGetElectricInfo(&stElecInfo);
+	comObj =  cJSON_CreateObject();
+	if(NULL == comObj){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconOnline create elec <comObj> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}	
+	cJSON_AddItemToObject(cmdData, "elec", comObj);
+	cJSON_AddItemToObject(comObj, "current", cJSON_CreateNumber(stElecInfo.current));							
+	cJSON_AddItemToObject(comObj, "voltage", cJSON_CreateNumber(stElecInfo.voltage));							
+	cJSON_AddItemToObject(comObj, "factor", cJSON_CreateNumber(stElecInfo.factor));							
+	cJSON_AddItemToObject(comObj, "power", cJSON_CreateNumber(stElecInfo.power));							
+	//ecInfo
+	comObj =  cJSON_CreateObject();
+	if(NULL == comObj){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconOnline create ecInfo <comObj> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}		
+	cJSON_AddItemToObject(cmdData, "ecInfo", comObj);
+	cJSON_AddItemToObject(comObj, "EC", cJSON_CreateNumber(stElecInfo.consumption));							
+	cJSON_AddItemToObject(comObj, "HEC", cJSON_CreateNumber(stElecInfo.hisConsumption));	
+	//runtime
+	OppLampCtrlGetRtime(0,&rTime);
+	OppLampCtrlGetHtime(0,&hTime);
+	OppLampCtrlGetLtime(0,&lTime);
+	OppLampCtrlGetHLtime(0,&hlTime);
+	comObj =  cJSON_CreateObject();
+	if(NULL == comObj){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconOnline create runtime <comObj> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}		
+	cJSON_AddItemToObject(cmdData, "runtime",comObj);
+	cJSON_AddItemToObject(comObj, "hTime", cJSON_CreateNumber(hTime)); 						
+	cJSON_AddItemToObject(comObj, "rTime", cJSON_CreateNumber(rTime));
+	cJSON_AddItemToObject(comObj, "hlTime", cJSON_CreateNumber(hlTime)); 						
+	cJSON_AddItemToObject(comObj, "lTime", cJSON_CreateNumber(lTime));
+	//nb signal this function run at bc28 thread
+	ret = NeulBc28QueryUestats(&stNeulDev);
+	if(0 == ret){
+		comObj =  cJSON_CreateObject();
+		if(NULL == comObj){
+			MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+			DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconHeart create nbSignalCore <comObj> object error\r\n");
+			cJSON_Delete(root);
+			return OPP_FAILURE;
+		}			
+		cJSON_AddItemToObject(cmdData, "nbSignalCore", comObj);
+		cJSON_AddItemToObject(comObj, "rsrp", cJSON_CreateNumber(stNeulDev.rsrp));							
+		cJSON_AddItemToObject(comObj, "snr", cJSON_CreateNumber(stNeulDev.snr));
+		cJSON_AddItemToObject(comObj, "cellid", cJSON_CreateNumber(stNeulDev.cellId));	
+	}
+	
+	JsonCompres(root, (char *)&coapmsgTx, &outLength);
+	OppCoapSend(dstChl, dstInfo, CMD_MSG, REPORT_T, FUNC_SERVICE,0,coapmsgTx, outLength, OppCoapMidGet());	
+	pstRhb = (ST_RHB_ENTRY *)malloc(sizeof(ST_RHB_ENTRY));
+	if(NULL == pstRhb){
+		return OPP_FAILURE;
+	}
+	pstRhb->chl = dstChl;
+	if(dstInfo && memcmp(dstInfo,zeroInfo,sizeof(zeroInfo)))
+		memcpy(pstRhb->info,dstInfo,sizeof(pstRhb->info));
+	pstRhb->reqId = reqId;
+	pstRhb->times = DEFAULT_RHB;
+	pstRhb->mid = OppCoapMidGet();
+	pstRhb->tick = OppTickCountGet();
+	MUTEX_LOCK(m_ulCoapRHB,100);
+	LIST_INSERT_HEAD(&list_rhb,pstRhb,elements);
+	MUTEX_UNLOCK(m_ulCoapRHB);
+	OppCoapMidIncrease();
+
+	return OPP_SUCCESS;
+}
 
 int ApsCoapOceanconRetryHeartOnline(U8 dstChl, unsigned char *dstInfo, int reqId, unsigned short mid)
 {
@@ -7160,6 +7498,118 @@ int ApsCoapOceanconRetryHeartOnline(U8 dstChl, unsigned char *dstInfo, int reqId
 	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"ApsCoapOceanconRetryHeartOnline\r\n");
 	cJSON_AddItemToObject(root, "reqId", cJSON_CreateNumber(reqId));
     cJSON_AddItemToObject(root, "cmdId", cJSON_CreateString(HEARTBEAT_CMDID));
+	JsonCompres(root, (char *)&coapmsgTx, &outLength);
+	OppCoapSend(dstChl, dstInfo, CMD_MSG, REPORT_T, FUNC_SERVICE,0,coapmsgTx, outLength, mid);	
+	
+	return OPP_SUCCESS;
+}
+
+int ApsCoapOceanconRetryOnline(U8 dstChl, unsigned char *dstInfo, int reqId, unsigned short mid)
+{
+	U8 coapmsgTx[JSON_S_MAX_LEN] = {0};
+    cJSON *root, *cmdData, *comObj;
+	U16 outLength = 0;
+	U8 lampSwitch = 0;
+	U16 usBri = 0;
+	ST_OPP_LAMP_CURR_ELECTRIC_INFO stElecInfo;
+	U32 rTime,hTime,lTime,hlTime;
+	char buffer[64] = {0};
+	ST_NEUL_DEV *pstNeulDev = NULL;
+	int ret;
+	char *sArgv[MAX_ARGC];
+	char *rArgv[MAX_ARGC];
+	int sArgc = 0, rArgc = 0;
+
+	root =  cJSON_CreateObject();
+	if(NULL == root){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconRetryOnline create <root> object error\r\n");
+		return OPP_FAILURE;
+	}	
+	
+	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"ApsCoapOceanconRetryOnline\r\n");
+	cJSON_AddItemToObject(root, "reqId", cJSON_CreateNumber(reqId));
+    cJSON_AddItemToObject(root, "cmdId", cJSON_CreateString(ONLINE_CMDID));
+	cmdData =  cJSON_CreateObject();
+	if(NULL == cmdData){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconRetryOnline create <cmdData> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}
+	
+	cJSON_AddItemToObject(root, "cmdData", cmdData);
+	snprintf(buffer, 5, "%04x", PRODUCTSKU);
+    cJSON_AddItemToObject(cmdData, "sku", cJSON_CreateString(buffer));
+	snprintf(buffer, 5, "%04x", PRODUCTCLASS);
+    cJSON_AddItemToObject(cmdData, "clas", cJSON_CreateString(buffer));
+    cJSON_AddItemToObject(cmdData, "ver", cJSON_CreateNumber(OPP_LAMP_CTRL_CFG_DATA_VER));
+	OppLampCtrlGetSwitch(0, &lampSwitch);
+    cJSON_AddItemToObject(cmdData, "switch", cJSON_CreateNumber(lampSwitch));
+	OppLampCtrlGetBri(0,&usBri);
+    cJSON_AddItemToObject(cmdData, "bri", cJSON_CreateNumber(usBri));
+
+	//elec
+	ElecGetElectricInfo(&stElecInfo);
+	comObj =  cJSON_CreateObject();
+	if(NULL == comObj){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconRetryOnline create elec <comObj> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}	
+	cJSON_AddItemToObject(cmdData, "elec", comObj);
+	cJSON_AddItemToObject(comObj, "current", cJSON_CreateNumber(stElecInfo.current));							
+	cJSON_AddItemToObject(comObj, "voltage", cJSON_CreateNumber(stElecInfo.voltage));							
+	cJSON_AddItemToObject(comObj, "factor", cJSON_CreateNumber(stElecInfo.factor));							
+	cJSON_AddItemToObject(comObj, "power", cJSON_CreateNumber(stElecInfo.power));							
+	//ecInfo
+	comObj =  cJSON_CreateObject();
+	if(NULL == comObj){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconRetryOnline create ecInfo <comObj> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}		
+	cJSON_AddItemToObject(cmdData, "ecInfo", comObj);
+	cJSON_AddItemToObject(comObj, "EC", cJSON_CreateNumber(stElecInfo.consumption));							
+	cJSON_AddItemToObject(comObj, "HEC", cJSON_CreateNumber(stElecInfo.hisConsumption));	
+	//runtime
+	OppLampCtrlGetRtime(0,&rTime);
+	OppLampCtrlGetHtime(0,&hTime);
+	OppLampCtrlGetRtime(0,&lTime);
+	OppLampCtrlGetHtime(0,&hlTime);
+	comObj =  cJSON_CreateObject();
+	if(NULL == comObj){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconRetryOnline create runtime <comObj> object error\r\n");
+		cJSON_Delete(root);
+		return OPP_FAILURE;
+	}		
+	cJSON_AddItemToObject(cmdData, "runtime",comObj);
+	cJSON_AddItemToObject(comObj, "hTime", cJSON_CreateNumber(hTime)); 						
+	cJSON_AddItemToObject(comObj, "rTime", cJSON_CreateNumber(rTime));
+	cJSON_AddItemToObject(comObj, "hlTime", cJSON_CreateNumber(hlTime)); 						
+	cJSON_AddItemToObject(comObj, "lTime", cJSON_CreateNumber(lTime));
+	//nb signal
+	ret = sendEvent(UESTATE_EVENT,RISE_STATE,sArgc,sArgv);
+	ret = recvEvent(UESTATE_EVENT,&rArgc,rArgv,EVENT_WAIT_DEFAULT);
+	if(0 == ret){
+		pstNeulDev = (ST_NEUL_DEV *)rArgv[0];
+		comObj =  cJSON_CreateObject();
+		if(NULL == comObj){
+			MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+			DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapOceanconRetryOnline create nbSignalCore <comObj> object error\r\n");
+			cJSON_Delete(root);
+			ARGC_FREE(rArgc,rArgv);
+			return OPP_FAILURE;
+		}			
+		cJSON_AddItemToObject(cmdData, "nbSignalCore", comObj);
+		cJSON_AddItemToObject(comObj, "rsrp", cJSON_CreateNumber(pstNeulDev->rsrp));							
+		cJSON_AddItemToObject(comObj, "snr", cJSON_CreateNumber(pstNeulDev->snr));
+		cJSON_AddItemToObject(comObj, "cellid", cJSON_CreateNumber(pstNeulDev->cellId));	
+	}
+	ARGC_FREE(rArgc,rArgv);
 	JsonCompres(root, (char *)&coapmsgTx, &outLength);
 	OppCoapSend(dstChl, dstInfo, CMD_MSG, REPORT_T, FUNC_SERVICE,0,coapmsgTx, outLength, mid);	
 	
@@ -7465,7 +7915,8 @@ int ApsCoapOnlineTimeout()
 	MUTEX_LOCK(m_ulCoapRHB,100);
 	LIST_FOREACH(pstRhb, &list_rhb, elements){
 		if(OppTickCountGet() - pstRhb->tick >= ONLINE_TO){
-			ApsCoapOceanconRetryHeartOnline(pstRhb->chl, pstRhb->info,pstRhb->reqId, pstRhb->mid);
+			//ApsCoapOceanconRetryHeartOnline(pstRhb->chl, pstRhb->info,pstRhb->reqId, pstRhb->mid);
+			ApsCoapOceanconRetryOnline(pstRhb->chl, pstRhb->info,pstRhb->reqId, pstRhb->mid);
 				if(pstRhb->times != RETRY_ALWAYS){
 				if(pstRhb->times > 0)
 					pstRhb->times--;
@@ -7796,9 +8247,10 @@ int ApsCoapWifiConDelay(void)
 		if((OppTickCountGet() - g_iWifiConTick) >= 10000){	
 			memset(&wifi_config, 0, sizeof(wifi_config_t));
 			ApsWifiConfigRead(&stWifiConfig);
-			strcpy((char *)wifi_config.sta.ssid, (char *)stWifiConfig.ssid);
+			/*strcpy((char *)wifi_config.sta.ssid, (char *)stWifiConfig.ssid);
 			strcpy((char *)wifi_config.sta.password, (char *)stWifiConfig.password);
-			ApsWifiStopStart(&wifi_config);
+			ApsWifiStopStart(&wifi_config);*/
+			ApsWifiStaConfig((char *)stWifiConfig.ssid,(char *)stWifiConfig.password);
 			g_iWifiConTick = 0;
 		}
 	}
@@ -7836,6 +8288,8 @@ int OppCoapPackRuntimeState(cJSON *prop, void * data)
 	cJSON_AddItemToObject(prop, "runtime",comObj);
 	cJSON_AddItemToObject(comObj, "hTime", cJSON_CreateNumber(ptr->hTime));							
 	cJSON_AddItemToObject(comObj, "rTime", cJSON_CreateNumber(ptr->rTime));							
+	cJSON_AddItemToObject(comObj, "hlTime", cJSON_CreateNumber(ptr->hlTime));							
+	cJSON_AddItemToObject(comObj, "lTime", cJSON_CreateNumber(ptr->lTime));							
 
 	return OPP_SUCCESS;
 }
@@ -8072,9 +8526,15 @@ int ApsCoapStateReport(ST_REPORT_PARA *pstReportPara)
 		}
 		((ST_RUNTIME_PROP *)(pstReport->data))->rTime = g_stThisLampInfo.stCurrStatus.uwRunTime;
 		((ST_RUNTIME_PROP *)(pstReport->data))->hTime = g_stThisLampInfo.stCurrStatus.uwHisTime;
+		((ST_RUNTIME_PROP *)(pstReport->data))->lTime = g_stThisLampInfo.stCurrStatus.uwLightTime;
+		((ST_RUNTIME_PROP *)(pstReport->data))->hlTime = g_stThisLampInfo.stCurrStatus.uwHisLightTime;
 		if(0 == strcmp(aucPropMap[i].propName, "rTime"))
 			((ST_RUNTIME_PROP *)(pstReport->data))->rTime = pstReportPara->value;
 		if(0 == strcmp(aucPropMap[i].propName, "hTime"))
+			((ST_RUNTIME_PROP *)(pstReport->data))->hTime = pstReportPara->value;
+		if(0 == strcmp(aucPropMap[i].propName, "lTime"))
+			((ST_RUNTIME_PROP *)(pstReport->data))->rTime = pstReportPara->value;
+		if(0 == strcmp(aucPropMap[i].propName, "hlTime"))
 			((ST_RUNTIME_PROP *)(pstReport->data))->hTime = pstReportPara->value;
 	}
 	else if(0 == strcmp(aucPropMap[i].comPropName, "nbSignal")){

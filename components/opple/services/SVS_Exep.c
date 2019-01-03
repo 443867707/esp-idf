@@ -27,8 +27,8 @@ extern esp_err_t print_panic_saved(int core_id, char *outBuf);
 extern esp_err_t print_panic_occur_saved(int8_t *occur);
 extern esp_err_t save_panic_occur(int8_t occur);
 
-static char core0Panic[1024] = {0};
-static char core1Panic[1024] = {0};
+static char core0Panic[200] = {0};
+static char core1Panic[200] = {0};
 
 U32 ApsExepInit()
 {

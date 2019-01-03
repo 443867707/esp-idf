@@ -2413,7 +2413,7 @@ int NeulBc28QueryClock(char * time)
         //write data to bc28 failed
         return -1;
     }
-    memset(neul_dev.rbuf, 0, 36);
+    memset(neul_dev.rbuf, 0, NEUL_MAX_BUF_SIZE);
     ret = neul_dev.ops->dev_read(neul_dev.rbuf, 36, 0, 300);
     if (ret <= 0)
     {
@@ -2433,7 +2433,7 @@ int NeulBc28QueryClock(char * time)
 
 	if(strlen(str) > 36)
 	{
-		DEBUG_LOG(DEBUG_MODULE_BC28, DLL_ERROR, "error length %d\r\n", strlen(neul_dev.rbuf));
+		DEBUG_LOG(DEBUG_MODULE_BC28, DLL_ERROR, "error length %d %s\r\n", strlen(neul_dev.rbuf), neul_dev.rbuf);
 		return -1;
 	}
 	

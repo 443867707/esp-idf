@@ -32,6 +32,7 @@
 #include "string.h"
 #include "opple_main.h"
 #include "SVS_Exep.h"
+#include "SVS_Para.h"
 
 #define OTA_SERVER_IP   "192.168.10.222"
 #define OTA_SERVER_PORT "80"
@@ -43,8 +44,8 @@
 char g_aucOtaSvrIp[IP_LEN]={'\0'};
 char g_aucOtaSvrPort[PORT_LEN]={'\0'};
 char g_aucOtaFile[FILE_LEN]={'\0'};
-int g_aucOtaStart=0;  /* 换成信号量 */
-
+int g_aucOtaStart=0;  /* 换成信号�? */
+int g_iOtaFileLen = 0;
 extern OS_EVENTGROUP_T g_eventWifi;
 
 
@@ -58,6 +59,87 @@ static int binary_file_length = 0;
 /*socket id*/
 static int socket_id = -1;
 
+/*****************************************************************************
+Version History Module
+1. Original Version
+2. Last[n] Version
+*****************************************************************************/
+#define OTA_PARA_INDEX_OV  0  // U32
+#define OTA_PARA_INDEX_HV  1  // U32 Array
+#define OTA_HV_NUM_MAX     10 // 
+
+/*
+* @param version the version to hold the origianl version
+* @return 0:success
+*/
+int OriginalVersinGet(unsigned int* version)
+{
+	if(version == 0) return 1;
+	return AppParaReadU32(APS_PARA_MODULE_APS_OTA,OTA_PARA_INDEX_OV,version);
+}
+
+/*
+* @param version the version to set the origianl version
+* @return 0:success
+*/
+int OriginalVersionSet(unsigned int version)
+{
+	return AppParaWriteU32(APS_PARA_MODULE_APS_OTA,OTA_PARA_INDEX_OV,version);
+}
+
+/*
+* @param version the version to push
+* @return 0:success
+*/
+int HistoryVersionPush(unsigned int version)
+{
+	unsigned int vh[OTA_HV_NUM_MAX];
+	unsigned int len = OTA_HV_NUM_MAX*sizeof(unsigned int);
+	int start = 0;
+	
+	memset(vh,0,sizeof(vh));
+	if(AppParaRead(APS_PARA_MODULE_APS_OTA,OTA_PARA_INDEX_HV,(unsigned char*)vh,&len) != 0)
+	{
+		AppParaRead(APS_PARA_MODULE_APS_OTA,OTA_PARA_INDEX_HV,(unsigned char*)vh,&len);
+	}
+	if(vh[0] != 0)
+	{
+		start = 1;
+	}
+	for(int i=start ;i < OTA_HV_NUM_MAX-1;i++)
+	{
+		vh[i] = vh[i+1];
+	}
+	vh[OTA_HV_NUM_MAX-1] = version;
+	return(AppParaWrite(APS_PARA_MODULE_APS_OTA,OTA_PARA_INDEX_HV,(unsigned char*)vh,len));
+}
+
+/*
+* @param vh version history:
+* [original version][first rcd] ... [the latest version]
+* @param inOutLen the length of vh to hold the vh
+* @return 0:success
+*/
+int HistoryVersionGet(unsigned int *vh,unsigned int* inOutLen)
+{
+	unsigned int len = OTA_HV_NUM_MAX*sizeof(unsigned int);
+	
+	if(*inOutLen < OTA_HV_NUM_MAX+1) return 1;
+	if(vh == 0) return 2;
+
+	memset(vh,0,(OTA_HV_NUM_MAX+1)*sizeof(unsigned int));
+	if(OriginalVersinGet(&vh[0]) != 0){ 
+		OriginalVersinGet(&vh[0]);
+	}
+	if(AppParaRead(APS_PARA_MODULE_APS_OTA,OTA_PARA_INDEX_HV,(unsigned char*)(&vh[1]),&len) != 0)
+	{
+		AppParaRead(APS_PARA_MODULE_APS_OTA,OTA_PARA_INDEX_HV,(unsigned char*)(&vh[1]),&len);
+	}
+	*inOutLen = OTA_HV_NUM_MAX+1;
+	return 0;
+}
+
+/****************************************************************************/
 
 /*read buffer by byte still delim ,return read bytes counts*/
 static int read_until(char *buffer, char delim, int len)
@@ -78,6 +160,18 @@ static bool read_past_http_header(char text[], int total_len, esp_ota_handle_t u
 {
     /* i means current position */
     int i = 0, i_read_len = 0;
+	char *ptr;
+	int ret;
+	
+	printf("read_past_http_header\r\n");
+	printf("%s",text);
+	ptr = strstr(text,"Content-Length: ");
+	if(ptr){
+		printf("%s",ptr);
+		ret = sscanf(ptr,"Content-Length: %d%*[\r\n]", &g_iOtaFileLen);
+		if(1==ret)
+			printf("ota file len:%d\r\n",g_iOtaFileLen);
+	}
     while (text[i] != 0 && i < total_len) {
         i_read_len = read_until(&text[i], '\n', total_len);
         // if we resolve \r\n line,we think packet header is finished
@@ -101,6 +195,16 @@ static bool read_past_http_header(char text[], int total_len, esp_ota_handle_t u
         i += i_read_len;
     }
     return false;
+}
+
+int OtaProg(void)
+{
+	return g_iOtaFileLen==0?0:binary_file_length*100/g_iOtaFileLen;
+}
+
+int OtaState(void)
+{
+	return g_stOtaProcess.state;
 }
 
 static bool connect_to_http_server()
@@ -146,11 +250,40 @@ static bool connect_to_http_server()
 //	        ;
 //	    }
 //	}
-#define task_fatal_error() \
+#define task_fatal_error(err) \
 {\
     close(socket_id);\
-    g_aucOtaStart = 0;\
+    g_aucOtaStart = 0;\    
+	g_stOtaProcess.type = OTA_REPORT; \
+	g_stOtaProcess.state = OTA_FAIL; \
+	g_stOtaProcess.error = err; \
+	g_stOtaProcess.process = OtaProg(); \
+	ApsCoapOtaProcessRsp(&g_stOtaProcess); \
     goto OTA_START;\
+}
+
+int RecordVersion(void)
+{
+	int err;
+	unsigned int vh[OTA_HV_NUM_MAX+1],inOutLen = OTA_HV_NUM_MAX+1;
+	
+	err = HistoryVersionGet(vh,&inOutLen);
+	if(err == 0)
+	{
+		if(vh[OTA_HV_NUM_MAX] != OPP_LAMP_CTRL_CFG_DATA_VER)
+		{
+			err = HistoryVersionPush(OPP_LAMP_CTRL_CFG_DATA_VER);
+			return err;
+		}
+		else
+		{
+			return 0;
+		}
+	}
+	else
+	{
+		return err;
+	}
 }
 
 void OtaThread(void *pvParameter)
@@ -161,10 +294,17 @@ void OtaThread(void *pvParameter)
     const esp_partition_t *update_partition = NULL;
     esp_partition_t *configured;
     esp_partition_t *running;
+    int rvErr;
 
     strcpy(g_aucOtaSvrIp, OTA_SERVER_IP);
     strcpy(g_aucOtaSvrPort, OTA_SERVER_PORT);
     strcpy(g_aucOtaFile, OTA_FILENAME);
+
+	rvErr = RecordVersion();
+	if(rvErr != 0)
+	{
+		printf("RecordVersion fail,err=%d!\r\n",rvErr);
+	}
     
     while(1)
     {
@@ -181,8 +321,10 @@ OTA_START:
     		strcpy(g_aucOtaSvrIp, OTA_SERVER_IP);
       	if(0 == strlen(g_aucOtaSvrPort))
     		strcpy(g_aucOtaSvrPort, OTA_SERVER_PORT);
-    	  if(0 == strlen(g_aucOtaFile))
+    	if(0 == strlen(g_aucOtaFile))
     		strcpy(g_aucOtaFile, OTA_FILENAME);
+		g_iOtaFileLen = 0;
+		binary_file_length = 0;
         ESP_LOGI(TAG,"ip:%s,port:%s,file:%s\r\n",g_aucOtaSvrIp,g_aucOtaSvrPort,g_aucOtaFile);
     
         ESP_LOGI(TAG, "Starting OTA example...");
@@ -216,7 +358,7 @@ OTA_START:
             ESP_LOGI(TAG, "Connected to http server");
         } else {
             ESP_LOGE(TAG, "Connect to http server failed!");
-            task_fatal_error();
+            task_fatal_error(OTA_CONNECT_SVR_ERR);
         }
     
         /*send GET request to http server*/
@@ -231,14 +373,14 @@ OTA_START:
         int get_len = asprintf(&http_request, GET_FORMAT, g_aucOtaFile, g_aucOtaSvrIp, g_aucOtaSvrPort);
         if (get_len < 0) {
             ESP_LOGE(TAG, "Failed to allocate memory for GET request buffer");
-            task_fatal_error();
+            task_fatal_error(OTA_MALLOC_ERR);
         }
         int res = send(socket_id, http_request, get_len, 0);
         free(http_request);
     
         if (res < 0) {
             ESP_LOGE(TAG, "Send GET request to server failed");
-            task_fatal_error();
+            task_fatal_error(OTA_SEND_ERR);
         } else {
             ESP_LOGI(TAG, "Send GET request to server succeeded");
         }
@@ -251,13 +393,22 @@ OTA_START:
         err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
-            task_fatal_error();
+            task_fatal_error(OTA_BEGIN_ERR);
         }
        
         ESP_LOGI(TAG, "esp_ota_begin succeeded");
         DEBUG_LOG(DEBUG_MODULE_AUS, DLL_INFO,"Start ota...\r\n");
     
         bool resp_body_start = false, flag = true;
+		struct timeval ti; 
+		
+		ti.tv_sec=30;
+		ti.tv_usec=0;
+		if(setsockopt(socket_id,SOL_SOCKET,SO_RCVTIMEO,&ti,sizeof(struct timeval)) == -1){
+			DEBUG_LOG(DEBUG_MODULE_AUS, DLL_ERROR, "connect http server socket set SO_RCVTIMEO fail\r\n");
+			task_fatal_error(OTA_SOL_SOCKET_ERR);
+		}
+		
         /*deal with all receive packet*/
         while (flag) {
             memset(text, 0, TEXT_BUFFSIZE);
@@ -266,7 +417,7 @@ OTA_START:
     		//printf("%s\r\n",text);
             if (buff_len < 0) { /*receive error*/
                 ESP_LOGE(TAG, "Error: receive data error! errno=%d", errno);
-                task_fatal_error();
+                task_fatal_error(OTA_RECV_TO_ERR);
             } else if (buff_len > 0 && !resp_body_start) { /*deal with response header*/
                 memcpy(ota_write_data, text, buff_len);
                 resp_body_start = read_past_http_header(text, buff_len, update_handle);
@@ -276,7 +427,7 @@ OTA_START:
     			err = esp_ota_write( update_handle, (const void *)ota_write_data, buff_len);
                 if (err != ESP_OK) {
                     ESP_LOGE(TAG, "Error: esp_ota_write failed (%s)!", esp_err_to_name(err));
-                    task_fatal_error();
+                    task_fatal_error(OTA_WRITE_ERR);
                 }
                 
                 binary_file_length += buff_len;
@@ -284,7 +435,8 @@ OTA_START:
                 //DEBUG_LOG(DEBUG_MODULE_AUS, DLL_INFO,"Have written image length %d\r\n", binary_file_length);
                 
             } else if (buff_len == 0) {  /*packet over*/
-                flag = false;
+                flag = false;			
+				g_stOtaProcess.state = OTA_DOWNLOADED;
                 ESP_LOGI(TAG, "Connection closed, all packets received");
                 close(socket_id);
             } else {
@@ -298,27 +450,30 @@ OTA_START:
         if (esp_ota_end(update_handle) != ESP_OK) {
             ESP_LOGE(TAG, "esp_ota_end failed!");
             DEBUG_LOG(DEBUG_MODULE_AUS, DLL_INFO,"esp_ota_end failed!\r\n");
-            task_fatal_error();
-        }
+            task_fatal_error(OTA_END_ERR);
+        }		
+		g_stOtaProcess.state = OTA_UPGRADING;
         err = esp_ota_set_boot_partition(update_partition);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)!", esp_err_to_name(err));
             DEBUG_LOG(DEBUG_MODULE_AUS, DLL_INFO,"esp_ota_set_boot_partition failed!\r\n");
-            task_fatal_error();
+            task_fatal_error(OTA_SET_BOOT_PARTITION);
         }
     	
         ESP_LOGI(TAG, "Prepare to restart system!");
         DEBUG_LOG(DEBUG_MODULE_AUS, DLL_INFO,"Ota success!\r\n");
 		
 		g_stOtaProcess.type = OTA_REPORT;
-		g_stOtaProcess.process = 100;
-		g_stOtaProcess.state = 2;
+		g_stOtaProcess.process = OtaProg();
+		g_stOtaProcess.state = OTA_SUCCESS;
+		g_stOtaProcess.error = OTA_NO_ERR;
 		strcpy(g_stOtaProcess.version,OPP_LAMP_CTRL_CFG_DATA_VER_STR);
 		ApsCoapOtaProcessRsp(&g_stOtaProcess);
 
 		DEBUG_LOG(DEBUG_MODULE_AUS, DLL_INFO,"Rebooting...\r\n");
 		
         vTaskDelay(3000 / portTICK_PERIOD_MS);
+        
 		sysModeDecreaseSet();
 		ApsCoapWriteExepInfo(OTA_RST);
 		ApsCoapDoReboot();

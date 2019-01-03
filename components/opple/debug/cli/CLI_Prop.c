@@ -54,6 +54,8 @@ void CommandHeartDisParaGet(void);
 void CommandHeartDisParaSet(void);
 void CommandHeartDisOffsetGet(void);
 void CommandHeartDisTickGet(void);
+void CommandGetLighttime(void);
+void CommandSetLighttime(void);
 
 
 const char* const report[] = {
@@ -65,6 +67,9 @@ const char* const alarmDesc[] = {
 };
 const char* const runtime[] = {
 "rTime","hTime"
+};
+const char* const lighttime[] = {
+"lTime","hlTime"
 };
 const char* const htime[] = {
 "htime"
@@ -118,6 +123,8 @@ CommandEntry CommandTableProp[] =
 	CommandEntryActionWithDetails("sRuntime", CommandSetRuntime, "uu", "set runtime...", runtime),
 	CommandEntryActionWithDetails("gfHtime", CommandGetHtimeFlash, "", "get htime from flash...", NULL),
 	CommandEntryActionWithDetails("sfHtime", CommandSetHtimeFlash, "u", "set htime to flash...", htime),
+	CommandEntryActionWithDetails("gLighttime", CommandGetLighttime, "", "get light time...", NULL),
+	CommandEntryActionWithDetails("sLighttime", CommandSetLighttime, "uu", "set light time...", lighttime),
 	CommandEntryActionWithDetails("sIot", CommandSetIotConfig, "u", "set iot config...", NULL),
 	CommandEntryActionWithDetails("gIot", CommandGetIotConfig, "", "get iot config...", NULL),
 	CommandEntryActionWithDetails("sfIot", CommandSetIotConfigToFlash, "u", "set iot config to flash...", NULL),
@@ -208,6 +215,29 @@ void CommandSetRuntime(void)
 	OppLampCtrlSetHtime(0, CliIptArgList[0][0]);
 	OppLampCtrlSetRtime(0, CliIptArgList[1][0]);
 }
+void CommandGetLighttime(void)
+{
+	U32 hltime, ltime;
+
+	OppLampCtrlGetHLtime(0, &hltime);
+	OppLampCtrlGetLtime(0, &ltime);
+	CLI_PRINTF("ltime %d hltime %d\r\n", ltime, hltime);
+}
+void CommandSetLighttime(void)
+{
+	if(CliIptArgList[0][0]>MAX_LIGHT_TIME){
+		CLI_PRINTF("hltime should not greate than %d\r\n", MAX_LIGHT_TIME);
+		return;
+	}
+	if(CliIptArgList[1][0]>MAX_LIGHT_TIME){
+		CLI_PRINTF("ltime should not greate than %d\r\n", MAX_LIGHT_TIME);
+		return;
+	}
+	OppLampCtrlSetHLtime(0, CliIptArgList[0][0]);
+	OppLampCtrlSetLtime(0, CliIptArgList[1][0]);
+}
+
+
 void CommandGetHtimeFlash(void)
 {
 	//ST_CONFIG_PARA stConfigPara;

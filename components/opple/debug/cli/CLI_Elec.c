@@ -10,6 +10,8 @@ void CommandConsumptionGet(void);
 void CommandElecInfo(void);
 void CommandElecGetFlash(void);
 void CommandElecSetFlash(void);
+void CommandElecGetPower(void);
+void CommandElecSetPower(void);
 
 CommandEntry CommandTableElec[] =
 {
@@ -21,6 +23,9 @@ CommandEntry CommandTableElec[] =
 	CommandEntryActionWithDetails("info",         CommandElecInfo,       "", "get elec info...", NULL),
 	CommandEntryActionWithDetails("gFlash",		  CommandElecGetFlash,	 "", "get elec flash...", NULL),
 	CommandEntryActionWithDetails("sFlash", 	  CommandElecSetFlash,	 "u", "set elec flash...", NULL),
+	CommandEntryActionWithDetails("sPower", 	  CommandElecSetPower,	 "u", "set elec power...", NULL),
+	CommandEntryActionWithDetails("gPower", 	  CommandElecGetPower,	 "", "get elec power...", NULL),
+
 	CommandEntryTerminator()
 };
 
@@ -80,14 +85,15 @@ void CommandElecGetFlash(void)
 {
 	ST_ELEC_CONFIG stElecConfig;
 	int ret;
+	unsigned int ltime;
 	
 	ret = ElecReadFlash(&stElecConfig);
 	if(OPP_SUCCESS != ret){
 		CLI_PRINTF("ElecReadFlash ret %d\r\n", ret);
 		return;
 	}
-	
-	CLI_PRINTF("hisConsumption %d\r\n", stElecConfig.hisConsumption);
+	LightTimeCrc8ToLightTime(stElecConfig.hisLightTime,&ltime);
+	CLI_PRINTF("hisConsumption %u hisTime %u hisLightTime %u\r\n", stElecConfig.hisConsumption, stElecConfig.hisTime, ltime);
 }
 void CommandElecSetFlash(void)
 {
@@ -99,6 +105,7 @@ void CommandElecSetFlash(void)
 		return;
 	}
 	OppLampCtrlGetHtime(0,&stElecConfig.hisTime);
+	OppLampCtrlGetHLtimeWithCrc8(0,&stElecConfig.hisLightTime);
 	ret = ElecWriteFlash(&stElecConfig);
 	if(OPP_SUCCESS != ret){
 		CLI_PRINTF("ElecWriteFlash ret %d\r\n", ret);
@@ -106,5 +113,22 @@ void CommandElecSetFlash(void)
 	}
 
 	ElecHisConsumptionSet(CliIptArgList[0][0]);
+}
+void CommandElecGetPower(void)
+{
+	U32 power;
+	int ret;
+	
+	ret = ElecPowerGet(0,&power);
+	if(OPP_SUCCESS != ret){
+		CLI_PRINTF("ElecReadFlash ret %d\r\n", ret);
+		return;
+	}
+	
+	CLI_PRINTF("power %d\r\n", power);
+}
+void CommandElecSetPower(void)
+{
+	ElecPowerSet(0,CliIptArgList[0][0]);
 }
 

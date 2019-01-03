@@ -15,6 +15,7 @@
 #include "esp_wifi.h"
 #include "SVS_WiFi.h"
 #include "SVS_Udp.h"
+#include "SVS_Ota.h"
 
 extern esp_err_t print_panic_saved(int core_id, char *outBuf);
 extern esp_err_t print_panic_occur_saved(int8_t *occur);
@@ -35,8 +36,10 @@ void CommandLogStatusGet(void);
 void CommandSysModeDescSet(void);
 void CommandHardInfo(void);
 void CommandLampInfo(void);
+void CommandUdpInfo(void);
 void CommandSysGetBackTrace(void);
 void CommandSysEraseBackTrace(void);
+void CommandSysOtaProg(void);
 
 extern ST_BC28_PKT   g_stBc28Pkt;
 extern ST_COAP_PKT g_stCoapPkt;
@@ -72,8 +75,10 @@ CommandEntry CommandTableSys[] =
 	CommandEntryActionWithDetails("hwInfo", CommandHardInfo, "", "sys hardware info...", NULL),
 	CommandEntryActionWithDetails("lampInfo", CommandLampInfo, "", "sys lamp info...", NULL),
 	CommandEntryActionWithDetails("sysModeCntDescSet", CommandSysModeDescSet, "", "sys mode cnt desc set...", NULL),
+	CommandEntryActionWithDetails("udpInfo", CommandUdpInfo, "", "sys udp info...", NULL),
 	CommandEntryActionWithDetails("btGet", CommandSysGetBackTrace, "", "sys panic backtrace...", NULL),
 	CommandEntryActionWithDetails("btErase", CommandSysEraseBackTrace, "", "sys panic backtrace...", NULL),
+	CommandEntryActionWithDetails("otaProg", CommandSysOtaProg, "", "ota progress...", NULL),
 
 	CommandEntryTerminator()
 };
@@ -179,6 +184,7 @@ void CommandSysRestore(void)
 	//restore runtime and consumption
 	stElecConfig.hisTime = 0;
 	stElecConfig.hisConsumption = 0;
+	stElecConfig.hisLightTime = 0;
 	ret = ElecWriteFlash(&stElecConfig);
 	if(OPP_SUCCESS != ret){
 		CLI_PRINTF("elec restore factory fail ret %d\r\n", ret);
@@ -186,6 +192,8 @@ void CommandSysRestore(void)
 	ElecHisConsumptionSet(0);
 	OppLampCtrlSetRtime(0,0);
 	OppLampCtrlSetHtime(0,0);	
+	OppLampCtrlSetLtime(0,0);
+	OppLampCtrlSetHLtime(0,0);	
 	//restore nbiot
 	ret = NeulBc28RestoreFactory();
 	if(OPP_SUCCESS != ret){
@@ -307,7 +315,7 @@ void CommandSysInfo(void)
 	unsigned int Temp_ProductClass = PRODUCTCLASS;
 	unsigned int Temp_ProductSku = PRODUCTSKU;
 	unsigned int Temp_Ver = OPP_LAMP_CTRL_CFG_DATA_VER;
-	U32 hTime, rTime;
+	U32 hTime, rTime, lTime, hlTime;
 	ST_OPP_LAMP_CURR_ELECTRIC_INFO stElecInfo;
     esp_chip_info_t chip_info;
 	AD_CONFIG_T config;
@@ -361,8 +369,12 @@ void CommandSysInfo(void)
 	len += snprintf(buffer+len, 512, "\r\n********runtime info*********\r\n");	
 	OppLampCtrlGetHtime(0,&hTime);
 	OppLampCtrlGetRtime(0,&rTime);
+	OppLampCtrlGetHLtime(0,&hlTime);
+	OppLampCtrlGetLtime(0,&lTime);
 	len += snprintf(buffer+len, 512, "hTime:%u\r\n", hTime);
 	len += snprintf(buffer+len, 512, "rTime:%u\r\n", rTime);
+	len += snprintf(buffer+len, 512, "hlTime:%u\r\n", hlTime);
+	len += snprintf(buffer+len, 512, "lTime:%u\r\n", lTime);
 	len += snprintf(buffer+len, 512, "sysTick:%u\r\n", OppTickCountGet());
 	//elec
 	len += snprintf(buffer+len, 512, "\r\n********elec info*********\r\n");
@@ -510,10 +522,20 @@ void CommandLampInfo(void)
 {
 	int state;
 	int level;
+	U32 hlTime,lTime;
+	char actTime[ACTTIME_LEN] = {0};
+	U8 srcChl, sw;
 	
 	CLI_PRINTF("dimType:%d\r\n", LampOuttypeGet());
 	LampStateRead(&state,&level);
 	CLI_PRINTF("switch:%d,level:%d\r\n",state,level/10);
+	OppLampCtrlGetHLtime(0,&hlTime);
+	OppLampCtrlGetLtime(0,&lTime);
+	CLI_PRINTF("history light time:%d,light time:%d\r\n",hlTime, lTime);
+	OppLampActTimeGet(actTime);
+	CLI_PRINTF("actTime %s\r\n", actTime);
+	OppLampDelayInfo(&srcChl,&sw);
+	CLI_PRINTF("delay info:switch %d chl %d\r\n", sw, srcChl);
 }
 
 void CommandUdpInfo(void)
@@ -527,7 +549,7 @@ void CommandUdpInfo(void)
 void CommandSysGetBackTrace(void)
 {
 	int8_t occur;
-	char buf[1024] = {0};
+	char buf[200] = {0};
 	int ret;
 	
 	ret = print_panic_occur_saved(&occur);
@@ -546,3 +568,9 @@ void CommandSysEraseBackTrace(void)
 {
 	erase_panic();
 }
+
+void CommandSysOtaProg(void)
+{
+	CLI_PRINTF("state:%d progres:%d\r\n",OtaState(),OtaProg());
+}
+

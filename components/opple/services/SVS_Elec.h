@@ -11,7 +11,7 @@
 #define EC_SCAN_TO      30000
 #define EC_SAVE_TO      30000
 #define RUNTIME_SCAN_TO      60000
-#define RUNTIME_SAVE_TO      600000
+#define RUNTIME_SAVE_TO      60000/*600000*/
 #define MAX_ENERGY_REG_VALUE 65535
 
 
@@ -19,6 +19,7 @@
 typedef struct{
 	U32 hisConsumption; /*ÀúÊ·¹¦ºÄ*/
 	U32 hisTime;
+	U32 hisLightTime;
 }ST_ELEC_CONFIG;
 
 typedef struct
@@ -34,6 +35,25 @@ typedef struct
 
 #pragma pack()
 
+//CRC-8 x8+x2+x+1
+inline unsigned char cal_crc8(unsigned char *vptr, unsigned char len)
+{
+	const unsigned char *data = vptr;
+	unsigned crc = 0;
+	int i, j;
+
+	for (j = len; j; j--, data++) {
+		crc ^= (*data << 8);
+		for (i = 8; i; i--) {
+			if (crc & 0x8000)
+			crc ^= (0x1070 << 3);
+			crc <<= 1;
+		}
+	}
+
+	return (unsigned char)(crc >> 8);
+}
+
 int ElecInit(void);
 void ElecTimerStart();
 void ElecThread(void *pvParameter);
@@ -45,6 +65,8 @@ int ElecReadFlash(ST_ELEC_CONFIG * pstElecInfo);
 int ElecVoltageGet(int target, unsigned int * voltage);
 int ElecVoltageSet(int target, int voltage);
 int ElecCurrentGet(int target, unsigned int * current);
+int ElecPowerGet(int target, unsigned int *power);
+int ElecPowerSet(int target, unsigned int power);
 int ElecCurrentSet(int target, int current);
 int ElecConsumptionSet(unsigned int consumption);
 int ElecConsumptionSetInner(U32 csp);

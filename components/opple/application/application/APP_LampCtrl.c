@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "esp_wifi.h"
+#include <SVS_Elec.h>
 
 extern xSemaphoreHandle g_stLampCfgMutex;
 T_MUTEX g_stRuntimeMutex;
@@ -65,6 +66,9 @@ ST_CONFIG_PARA g_stConfigPara;
 U16 g_usAstTimerId = 0;
 U16 g_usHeartTimerId = 0;
 U32 g_ulAstTimeLoss = 0;
+TimerHandle_t g_stDelayTimer = NULL;
+int m_iLightOnOff = 1;
+char g_aActTime[ACTTIME_LEN]="00-00-00 00:00:00";
 
 void Print_ProductClass_Sku_Ver(void)
 {
@@ -1409,9 +1413,9 @@ void OppLampCtrlSetDimLevel(EN_OP_SRC opSrc, U16 percent)
 	log.log[2] = opSrc;
 	ApsDaemonLogReport(&log);
 
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);	
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);	
 	LampDim(opSrc,percent*10);
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 
 }
 
@@ -1419,11 +1423,110 @@ U32 OppLampCtrlGetSwitchU32(U8 targetId, U32 * lampSwitch)
 {
 	int state, level;
 
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
 	//*lampSwitch = g_stThisLampInfo.stCurrStatus.ucSwitch;
 	LampStateRead(&state,&level);
 	*lampSwitch = state;
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlGetOnExep(U8 targetId, U32 * exep)
+{
+	int state, level;
+	unsigned int power;
+	static unsigned int tick = 0, tick1 = 0;
+	static unsigned char first = 1;
+	int ret;
+	
+	if(first){
+		tick = OppTickCountGet();
+		first = 0;
+	}
+	if(0 != tick){
+		if(OppTickCountGet()-tick<STARTUP_TIME){
+			return OPP_FAILURE;
+		}else{
+			tick = 0;
+		}
+	}
+
+	LampStateRead(&state,&level);
+	if(0 == state){
+		//*exep = 0;
+		tick1 = 0;
+		return OPP_FAILURE;
+	}
+	
+	if(0 == tick1){
+		tick1 = OppTickCountGet();
+	}
+	if(OppTickCountGet() - tick1 > READPOWER_PERIOD){
+		DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "OppLampCtrlGetOnExep timeout tick %d***\r\n",OppTickCountGet());
+		ret = ElecPowerGet(0,&power);
+		if(OPP_SUCCESS != ret){
+			DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "OppLampCtrlGetOnExep call ElecPowerGet err ret %d***\r\n",ret);
+			return OPP_FAILURE;
+		}
+		if(power < EXEP_LOW_PWR){
+			*exep = 1;
+		}else if(power > EXEP_HIGH_PWR){
+			*exep = 0;
+		}
+		tick1 = 0;
+		return OPP_SUCCESS;		
+	}else{
+		return OPP_FAILURE;
+	}
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlGetOffExep(U8 targetId, U32 * exep)
+{
+	int state, level;
+	unsigned int power;
+	static unsigned int tick = 0, tick1 = 0;
+	static unsigned char first = 1;
+	int ret;
+	
+	if(first){
+		tick = OppTickCountGet();
+		first = 0;
+	}
+	if(0 != tick){
+		if(OppTickCountGet()-tick<STARTUP_TIME){
+			return OPP_FAILURE;
+		}else{
+			tick = 0;
+		}
+	}
+
+	LampStateRead(&state,&level);
+	if(0 != state){
+		//*exep = 0;
+		tick1 = 0;
+		return OPP_FAILURE;
+	}
+	if(0 == tick1){
+		tick1 = OppTickCountGet();
+	}
+	if(OppTickCountGet() - tick1 > READPOWER_PERIOD){
+		DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "OppLampCtrlGetOffExep timeout tick %d***\r\n",OppTickCountGet());
+		ret = ElecPowerGet(0,&power);
+		if(OPP_SUCCESS != ret){
+			DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "OppLampCtrlGetOffExep call ElecPowerGet err ret %d***\r\n",ret);
+			return OPP_FAILURE;
+		}
+		if(power > EXEP_HIGH_PWR){
+			*exep = 1;
+		}else if(power < EXEP_LOW_PWR){
+			*exep = 0;
+		}
+		tick1 = 0;
+		return OPP_SUCCESS;		
+	}else{
+		return OPP_FAILURE;
+	}
 	return OPP_SUCCESS;
 }
 
@@ -1431,16 +1534,16 @@ U32 OppLampCtrlGetSwitch(U8 targetId, U8 * lampSwitch)
 {
 	int state, level;
 
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
 	LampStateRead(&state,&level);
 	*lampSwitch = state;
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 	return OPP_SUCCESS;
 }
 U32 OppLampCtrlSetSwitch(U8 targetId, U8 lampSwitch)
 {
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 	return OPP_SUCCESS;
 }
 
@@ -1448,11 +1551,11 @@ U32 OppLampCtrlGetBriU32(U8 targetId, U32 * bri)
 {
 	int state, level;
 
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
 	//*bri = g_stThisLampInfo.stCurrStatus.usBri;
 	LampStateRead(&state,&level);
 	*bri = level/10;
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 	return OPP_SUCCESS;
 }
 
@@ -1460,29 +1563,29 @@ U32 OppLampCtrlGetBri(U8 targetId, U16 * bri)
 {
 	int state, level;
 
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
 	LampStateRead(&state,&level);
 	*bri = level/10;
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 	return OPP_SUCCESS;
 }
 U32 OppLampCtrlSetBri(U8 targetId, U16 bri)
 {
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 	return OPP_SUCCESS;
 }
 U32 OppLampCtrlGetDimType(U8 * dimType)
 {
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
 	*dimType = LampOuttypeGet();
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 	return OPP_SUCCESS;
 }
 U32 OppLampCtrlSetDimType(U8 dimType)
 {
-	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
-	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	//MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	//MUTEX_UNLOCK(g_stLampCtrlMutex);
 	return OPP_SUCCESS;
 }
 
@@ -1535,6 +1638,236 @@ U32 OppLampCtrlRtimeAdd(U8 num)
 		g_stThisLampInfo.stCurrStatus.uwRunTime = g_stThisLampInfo.stCurrStatus.uwRunTime - MAX_RUNTIME - 1;
 	MUTEX_UNLOCK(g_stLampCtrlMutex);	
 	return OPP_SUCCESS;
+}
+
+/*input time with crc, output time without crc*/
+unsigned int LightTimeCrc8ToLightTime(unsigned int inLtime, unsigned int *outLtime)
+{
+	unsigned char *vptr,*vptr1;
+	unsigned int temp,temp1;
+	
+	vptr = (unsigned char *)&inLtime;
+	temp1 = vptr[0] | vptr[1]<<8 | vptr[2]<<16;
+	temp = temp1;
+	vptr1 = (unsigned char *)&temp1;
+	vptr1[3] = cal_crc8(&vptr1[0],3);
+	if(vptr1[3] != vptr[3]){
+		temp = 0;
+	}
+	*outLtime = temp;
+	return 0;
+
+}
+/*input time without crc, output time with crc*/
+unsigned int LightTimeToLightTimeCrc8(unsigned int inLtime, unsigned int *outLtime)
+{
+	unsigned char *vptr,*vptr1;
+	unsigned int temp;
+	
+	vptr1 = (unsigned char *)&inLtime;
+	temp = vptr1[0] | vptr1[1]<<8 | vptr1[2]<<16;
+	vptr = (unsigned char *)&temp;
+	vptr[3] = cal_crc8(&vptr[0],3);
+	*outLtime = temp;
+	return 0;
+}
+
+/*判断crc是否相同，若不相同返回错误，否则返回成功*/
+unsigned int LightTimeCrcJudge(unsigned int hltime)
+{
+	unsigned char *vptr,*vptr1;
+	unsigned int temp;
+	
+	vptr1 = (unsigned char *)&hltime;
+	temp = vptr1[0] | vptr1[1]<<8 | vptr1[2]<<16;
+	vptr = (unsigned char *)&temp;
+	vptr[3] = cal_crc8(&vptr[0],3);
+	if(vptr[3] != vptr1[3])
+		return -1;
+	return 0;
+}
+
+
+U32 OppLampCtrlGetLtime(U8 targetId, U32 * ltime)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	LightTimeCrc8ToLightTime(g_stThisLampInfo.stCurrStatus.uwLightTime,ltime);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlGetLtimeWithCrc8(U8 targetId, U32 * ltime)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	*ltime = g_stThisLampInfo.stCurrStatus.uwLightTime;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+
+}
+
+U32 OppLampCtrlGetHLtime(U8 targetId, U32 * hltime)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	LightTimeCrc8ToLightTime(g_stThisLampInfo.stCurrStatus.uwHisLightTime,hltime);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);		
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlGetHLtimeWithCrc8(U8 targetId, U32 * hltime)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	*hltime = g_stThisLampInfo.stCurrStatus.uwHisLightTime;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);		
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlSetLtime(U8 targetId, U32 ltime)
+{
+	unsigned int temp;
+
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	temp = ltime;
+	if(temp > MAX_LIGHT_TIME)
+		temp = temp - MAX_LIGHT_TIME - 1;
+	LightTimeToLightTimeCrc8(temp,&g_stThisLampInfo.stCurrStatus.uwLightTime);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);			
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlSetLtimeWithCrc8(U8 targetId, U32 ltime)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	g_stThisLampInfo.stCurrStatus.uwLightTime = ltime;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlSetHLtime(U8 targetId, U32 hltime)
+{
+	unsigned int temp;
+	
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	temp = hltime;
+	if(temp > MAX_LIGHT_TIME)
+		temp = temp - MAX_LIGHT_TIME - 1;
+	LightTimeToLightTimeCrc8(temp,&g_stThisLampInfo.stCurrStatus.uwHisLightTime);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlSetHLtimeWithCrc8(U8 targetId, U32 hltime)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	g_stThisLampInfo.stCurrStatus.uwHisLightTime = hltime;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+
+}
+
+U32 OppLampCtrlHLtimeAdd(U8 num)
+{
+	unsigned int temp;
+	
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	if(0 == m_iLightOnOff){
+		MUTEX_UNLOCK(g_stLampCtrlMutex);		
+		return OPP_SUCCESS;
+	}
+	LightTimeCrc8ToLightTime(g_stThisLampInfo.stCurrStatus.uwHisLightTime,&temp);
+	temp += num;
+	if(temp > MAX_LIGHT_TIME)
+		temp = temp - MAX_LIGHT_TIME - 1;
+	LightTimeToLightTimeCrc8(temp,&g_stThisLampInfo.stCurrStatus.uwHisLightTime);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+}
+
+U32 OppLampCtrlLtimeAdd(U8 num)
+{
+	unsigned int temp;
+
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	if(0 == m_iLightOnOff){
+		MUTEX_UNLOCK(g_stLampCtrlMutex);	
+		return OPP_SUCCESS;
+	}
+	LightTimeCrc8ToLightTime(g_stThisLampInfo.stCurrStatus.uwLightTime,&temp);
+	temp += num;
+	if(temp > MAX_LIGHT_TIME)
+		temp = temp - MAX_LIGHT_TIME - 1;
+	LightTimeToLightTimeCrc8(temp,&g_stThisLampInfo.stCurrStatus.uwLightTime);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+}
+
+
+U32 OppLampCtrlLightOnOff(int onOff)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	if(onOff)
+		m_iLightOnOff = 1;
+	else
+		m_iLightOnOff = 0;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);	
+	return OPP_SUCCESS;
+}
+
+U8 g_ucDelaySwitch = 0;
+U8 g_ucSrcChl = 0;
+void OppLampDelayOnOffCallback(TimerHandle_t timer)
+{
+	U8 ucDelaySwitch,ucSrcChl;
+
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	ucDelaySwitch = g_ucDelaySwitch;
+	ucSrcChl = g_ucSrcChl;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);
+
+	printf("OppLampDelayOnOffCallback chl %d sw %d\r\n", ucSrcChl, ucDelaySwitch);
+	OppLampCtrlOnOff(ucSrcChl,ucDelaySwitch);
+}
+void OppLampDelayOnOff(U8 srcChl, U8 sw, U32 sec)
+{
+	printf("OppLampDelayOnOffCallback chl %d sw %d sec %d\r\n", srcChl, sw, sec);
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	g_ucDelaySwitch = sw;
+	g_ucSrcChl = srcChl;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);
+	
+	if(g_stDelayTimer)
+		xTimerDelete(g_stDelayTimer,0);
+    g_stDelayTimer = xTimerCreate
+                   ("One Sec TImer",
+                   sec*1000,
+                   pdFALSE,
+                  ( void * ) 0,
+                  OppLampDelayOnOffCallback);
+
+     if( g_stDelayTimer != NULL ) {
+        xTimerStart( g_stDelayTimer, 0 );
+    }
+
+}
+void OppLampDelayInfo(U8 * srcChl, U8 * sw)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	*sw = g_ucDelaySwitch;
+	*srcChl = g_ucSrcChl;
+	MUTEX_UNLOCK(g_stLampCtrlMutex);
+}
+
+void OppLampActTimeGet(char *buf)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	strncpy(buf,g_aActTime,ACTTIME_LEN);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);
+}
+
+void OppLampActTimeSet(char *buf)
+{
+	MUTEX_LOCK(g_stLampCtrlMutex, MUTEX_WAIT_ALWAYS);
+	strncpy(g_aActTime,buf,ACTTIME_LEN);
+	MUTEX_UNLOCK(g_stLampCtrlMutex);
 }
 
 /*

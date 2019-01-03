@@ -30,6 +30,10 @@
 #define OVER_CUR_ALARM_IDX    2
 #define UNDER_CURALARMID       10003
 #define UNDER_CUR_ALARM_IDX   3
+#define EXEP_ONALARMID       10004
+#define EXEP_ON_ALARM_IDX   4
+#define EXEP_OFFALARMID       10005
+#define EXEP_OFF_ALARM_IDX   5
 
 //change report
 #define VOL_PROPCFG_IDX    0
@@ -279,6 +283,8 @@
 #define EXEP_CMDID            "Exep"
 #define ATTACH_CMDID            "AttachTime"
 #define PANIC_CMDID            "Panic"
+#define ONLINE_CMDID      "Online"
+#define ONLINEACK_CMDID   "OnlineAck"
 
 /** LOG SERVICE **/
 #define LOGSTATUS_CMDID       "LogStatus"
@@ -433,8 +439,16 @@
 #define TEST_VAL_ERR_DESC  	 				"[test] val [1,2]"
 #define TEST_SET_ERR      					337
 #define TEST_SET_ERR_DESC  	 				"test set para to flash error"
-//#define LOC_VAL_ERR      					338
-//#define LOC_VAL_ERR_DESC  	 				"config loc is invalide"
+#define ACTTIME_LEN_ERR      				338
+#define ACTTIME_LEN_ERR_DESC  	 			"[actTime] length error"
+#define ACTTIME_FORMAT_ERR      			339
+#define ACTTIME_FORMAT_ERR_DESC  	 		"[actTime] format must be XX-XX-XX XX:XX:XX"
+#define ACTTIME_GT_CURTIME_ERR      			340
+#define ACTTIME_GT_CURTIME_ERR_DESC  	 		"[actTime] must great than current time"
+#define OV_SET_ERR      					341
+#define OV_SET_ERR_DESC  	 				"set ota original version to flash error"
+#define LT_G_ERR      						342
+#define LT_G_ERR_DESC   					"light time should less than 16777215"
 
 
 //º¯Êý·þÎñ´íÎó4xx
@@ -628,6 +642,12 @@
 #define PROPFASTCFG_EMPTY_ERR_DESC   "prop fast config no config data"
 #define PANIC_EMPTY_ERR   494
 #define PANIC_EMPTY_ERR_DESC   "no panic"
+#define OTA_UPGRADING_ERR   495
+#define OTA_UPGRADING_ERR_DESC   "OTA upgrading"
+#define HV_ELE_NUM_ERR   496
+#define HV_ELE_NUM_ERR_DESC   "history version array element should be 1"
+#define HV_SET_ERR   497
+#define HV_SET_ERR_DESC   "history version set error"
 
 //ÈÕÖ¾·þÎñ´íÎó
 typedef int (*cmdIdFunc)(unsigned char dstChl);
@@ -714,6 +734,9 @@ typedef enum
 	PROP_SAVEHECTO,
 	PROP_ONLINETO,
 	PROP_BC28PARA,
+	PROP_ACTTIME,
+	PROP_OV,
+	PROP_HV,
 	/********************************/
 	PROP_MAX,
 }ST_PROP_ID;
@@ -886,6 +909,8 @@ typedef struct
 typedef struct{
 	U32 rTime;
 	U32 hTime;
+	U32 lTime;
+	U32 hlTime;
 }ST_RUNTIME_PROP;
 
 typedef struct{
@@ -1049,12 +1074,20 @@ typedef struct{
 #define OTA_RSP    0
 #define OTA_REPORT 1
 #define OTA_VER_LEN    20
+
+#define OTA_WAIT         0
+#define OTA_DOWNLOADING  1
+#define OTA_DOWNLOADED   2
+#define OTA_UPGRADING    3
+#define OTA_SUCCESS      4
+#define OTA_FAIL         5
+
 typedef struct
 {
 	U8 type;    /*0:rsp,1:report*/
 	U32 reqId;
 	U8 state;
-	U8 process;    /** 0:开始升级，1:正在升级，2:升级结束 , 3:升级失败 **/
+	U8 process;
 	U16 mid;
 	U8 dstChl;
 	U8 error;
@@ -1166,6 +1199,7 @@ void ApsCoapOceanconProcess(EN_MSG_CHL chl,const MSG_ITEM_T *item);
 unsigned int ApsCoapStartHeartbeat();
 int ApsCoapOceanconHeart(U8 dstChl);
 int ApsCoapOceanconHeartOnline(U8 dstChl, unsigned char *dstInfo);
+int ApsCoapOceanconOnline(U8 dstChl, unsigned char *dstInfo);
 int ApsCoapWorkPlanReport(U8 dstChl, unsigned char *dstInfo, ST_WORKPLAN_REPORT *stWorkPlanR);
 int ApsCoapGetTime(U8 dstChl, unsigned char * dstInfo);
 int ApsCoapOceanconRecv(char *outbuf, int maxrlen);

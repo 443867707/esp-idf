@@ -5,13 +5,28 @@
 #define PORT_LEN    6
 #define FILE_LEN    64
 
+typedef enum{
+	OTA_NO_ERR = 0,
+	OTA_CONNECT_SVR_ERR,
+	OTA_MALLOC_ERR,
+	OTA_SEND_ERR,
+	OTA_BEGIN_ERR,
+	OTA_SOL_SOCKET_ERR,
+	OTA_RECV_TO_ERR,
+	OTA_WRITE_ERR,
+	OTA_END_ERR,
+	OTA_SET_BOOT_PARTITION,
+	OTA_MAX_ERR
+}OTA_ERR;
+
 extern char g_aucOtaSvrIp[];
 extern char g_aucOtaSvrPort[];
 extern char g_aucOtaFile[];
 extern int g_aucOtaStart;
 
 extern void OtaStart(void);
-
+extern int OtaProg(void);
+extern int OtaState(void);
 extern void OtaThread(void *pvParameter);
 /*******nb ota*********/
 #define OTA_HDR                 0xFFFE
@@ -96,5 +111,12 @@ int NbOtaMsgProcess(unsigned char * data, unsigned short len);
 void NbOtaThread(void *pvParameter);
 int NbOtaGetState();
 void NbOtaSetState(unsigned char state);
+
+int OriginalVersinGet(unsigned int* version);
+int OriginalVersionSet(unsigned int version);
+int HistoryVersionPush(unsigned int version);
+int HistoryVersionGet(unsigned int *vh,unsigned int* inOutLen);
+
+
 
 #endif

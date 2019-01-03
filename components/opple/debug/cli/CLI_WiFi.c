@@ -1,11 +1,13 @@
+#include "Includes.h"
 #include "cli-interpreter.h"
 #include "esp_wifi.h"
 #include "string.h"
 #include "tcpip_adapter.h"
 #include "SVS_WiFi.h"
-
+#include "Opp_ErrorCode.h"
 
 //extern LIST_HEAD(listr,_list_ap_entry) list_ap;
+extern OS_EVENTGROUP_T g_eventWifi;
 
 void CommandWiFiInfo(void);
 void CommandApInfo(void);
@@ -14,6 +16,7 @@ void CommandWiFiConfigGet(void);
 void CommandWiFiConfigGetFlash(void);
 void CommandWiFiOnOff(void);
 void CommandWiFiScan(void);
+void CommandWiFiApConfig(void);
 
 
 const char* const nbArguments_wifiConfig[] = {
@@ -66,6 +69,7 @@ CommandEntry CommandTableWiFi[] =
 	CommandEntryActionWithDetails("configFlashGet", CommandWiFiConfigGetFlash, "", "", NULL),
 	CommandEntryActionWithDetails("onOff", CommandWiFiOnOff, "u", "", NULL),
 	CommandEntryActionWithDetails("scan", CommandWiFiScan, "s", "wifi scan", nbArguments_wifiScan),
+	CommandEntryActionWithDetails("apConfigSet", CommandWiFiApConfig, "ss", "", nbArguments_wifiConfig),
 	CommandEntryTerminator()
 };
 
@@ -121,7 +125,7 @@ void CommandWiFiInfo(void)
     char info[512];
 	unsigned char mac[6];
     unsigned char aucon_en;
-	wifi_mode_t mode;
+	wifi_mode_t mode = 0;
 	wifi_config_t conf;
     int len = 0;
 	float power;
@@ -132,25 +136,34 @@ void CommandWiFiInfo(void)
 	wifi_country_t country;
 	tcpip_adapter_ip_info_t local_ip;
 	char *hostname[0];
+	int ret;
 
+	CLI_PRINTF("**********sta config info*************\r\n");
 	tcpip_adapter_get_hostname(TCPIP_ADAPTER_IF_STA,&hostname[0]);
     len += snprintf(info,512,"hostname:%s\r\n",hostname[0]);
-    esp_wifi_get_auto_connect(&aucon_en);
-    len += snprintf(info+len,512,"auto connect en:%u\r\n",aucon_en);
-	esp_wifi_get_mac(WIFI_IF_STA, mac);
-    len += snprintf(info+len,512,"mac:%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    ret = esp_wifi_get_auto_connect(&aucon_en);
+	if(OPP_SUCCESS == ret)
+		len += snprintf(info+len,512,"auto connect en:%u\r\n",aucon_en);
+	ret = esp_wifi_get_mac(WIFI_IF_STA, mac);
+	if(OPP_SUCCESS == ret)
+    	len += snprintf(info+len,512,"mac:%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &local_ip);
 	len += snprintf(info+len,512,"sta:(ip: " IPSTR ", mask: " IPSTR ", gw: " IPSTR ")\r\n",
 		   IP2STR(&local_ip.ip), IP2STR(&local_ip.netmask), IP2STR(&local_ip.gw));
-	esp_wifi_get_channel(&primary,&second);
-    len += snprintf(info+len,512,"primary ch:%d, second ch:%s\r\n",primary,chDesc[second]);
-	esp_wifi_get_mode(&mode);
-    len += snprintf(info+len,512,"mode:%s\r\n",desc[mode]);
-	esp_wifi_get_config(WIFI_IF_STA, &conf);
-    len += snprintf(info+len,512,"ssid:%s, passwd:%s\r\n",conf.sta.ssid,conf.sta.password);
+	/*ret = esp_wifi_get_channel(&primary,&second);
+	if(OPP_SUCCESS == ret)
+		len += snprintf(info+len,512,"primary ch:%d, second ch:%d\r\n",primary,chDesc[second]);*/
+	ret = esp_wifi_get_mode(&mode);
+	if(OPP_SUCCESS == ret)
+		len += snprintf(info+len,512,"mode:%s\r\n",desc[mode]);
+	ret = esp_wifi_get_config(WIFI_IF_STA, &conf);
+	if(OPP_SUCCESS == ret)
+		len += snprintf(info+len,512,"ssid:%s, passwd:%s,scan_method:%d,bssid_set:%d,"MACSTR",listen_interval:%d,sort_method:%d,threshold.rssi:%d\r\n",
+		conf.sta.ssid,conf.sta.password,conf.sta.scan_method,conf.sta.bssid_set,MAC2STR(conf.sta.bssid),conf.sta.listen_interval,conf.sta.sort_method,conf.sta.threshold.rssi);
 	//esp_wifi_get_max_tx_power(&power);
-	ApsGetWifiPower(&power);
-    len += snprintf(info+len,512,"power:%f dbm\r\n",power);
+	ret = ApsGetWifiPower(&power);
+	if(OPP_SUCCESS == ret)
+    	len += snprintf(info+len,512,"power:%f dbm\r\n",power);
 	esp_wifi_get_protocol(WIFI_IF_STA,&protocol_bitmap);
 	if(protocol_bitmap|WIFI_PROTOCOL_11B)
     	len += snprintf(info+len,512,"protocol:%s\r\n","11b");
@@ -162,11 +175,45 @@ void CommandWiFiInfo(void)
 		len += snprintf(info+len,512,"protocol:%s\r\n","lr");
 	esp_wifi_get_bandwidth(WIFI_IF_STA,&bw);
     len += snprintf(info+len,512,"HT:%s\r\n",htDesc[bw-1]);
-	esp_wifi_get_country(&country);
-	country.cc[2] = '\0';
-    len += snprintf(info+len,512,"country code:%s start ch:%d total ch num:%d policy:%s\r\n",country.cc, country.schan, country.nchan,policyDesc[country.policy]);
-	len += snprintf(info+len,512,"wifi state:%s\r\n", wifiStateDesc[g_ucWifiState]);
+	ret = esp_wifi_get_country(&country);
+	if(OPP_SUCCESS == ret){
+		country.cc[2] = '\0';
+    	len += snprintf(info+len,512,"country code:%s start ch:%d total ch num:%d policy:%s\r\n",country.cc, country.schan, country.nchan,policyDesc[country.policy]);
+		len += snprintf(info+len,512,"wifi state:%s\r\n", wifiStateDesc[g_ucWifiState]);
+	}
 	CLI_PRINTF("%s",info);
+
+	/*softap info*/
+	if(mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA){
+		CLI_PRINTF("**********ap config info*************\r\n");
+		len = 0;
+		memset(info,0,sizeof(info));
+		tcpip_adapter_get_hostname(TCPIP_ADAPTER_IF_AP,&hostname[0]);
+		len += snprintf(info,512,"hostname:%s\r\n",hostname[0]);
+		ret = esp_wifi_get_mac(WIFI_IF_AP, mac);
+		if(OPP_SUCCESS == ret)
+			len += snprintf(info+len,512,"mac:%02X:%02X:%02X:%02X:%02X:%02X\r\n",mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+		tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &local_ip);
+		len += snprintf(info+len,512,"ap:(ip: " IPSTR ", mask: " IPSTR ", gw: " IPSTR ")\r\n",
+			   IP2STR(&local_ip.ip), IP2STR(&local_ip.netmask), IP2STR(&local_ip.gw));
+		ret = esp_wifi_get_config(WIFI_IF_AP, &conf);
+		if(OPP_SUCCESS == ret)
+			len += snprintf(info+len,512,"ssid:%s, passwd:%s channel:%d, authmode:%d, hidden:%d, max_con:%d, beacon_interval:%d\r\n",
+			conf.ap.ssid,conf.ap.password,conf.ap.channel,conf.ap.authmode,
+			conf.ap.ssid_hidden,conf.ap.max_connection,conf.ap.beacon_interval);		
+		esp_wifi_get_protocol(WIFI_IF_AP,&protocol_bitmap);
+		if(protocol_bitmap|WIFI_PROTOCOL_11B)
+			len += snprintf(info+len,512,"protocol:%s\r\n","11b");
+		if(protocol_bitmap|WIFI_PROTOCOL_11G)
+			len += snprintf(info+len,512,"protocol:%s\r\n","11g");
+		if(protocol_bitmap|WIFI_PROTOCOL_11N)
+			len += snprintf(info+len,512,"protocol:%s\r\n","11n");
+		if(protocol_bitmap|WIFI_PROTOCOL_LR)
+			len += snprintf(info+len,512,"protocol:%s\r\n","lr");
+		esp_wifi_get_bandwidth(WIFI_IF_AP,&bw);
+		len += snprintf(info+len,512,"HT:%s\r\n",htDesc[bw-1]);
+		CLI_PRINTF("%s",info);
+	}
 }
 
 void CommandApInfo(void)
@@ -204,7 +251,7 @@ void CommandApInfo(void)
 }
 void CommandWiFiConfig(void)
 {
-	ApsWifiConfig((char *)&CliIptArgList[0][0],(char *)&CliIptArgList[1][0]);
+	ApsWifiStaConfig((char *)&CliIptArgList[0][0],(char *)&CliIptArgList[1][0]);
 
 }
 
@@ -215,6 +262,11 @@ void CommandWiFiConfigGet(void)
 	ApsWifiConfigRead(&stWifiConfig);
 
 	CLI_PRINTF("ssid:%s, passwd:%s\r\n", stWifiConfig.ssid, stWifiConfig.password);
+}
+
+void CommandWiFiApConfig(void)
+{
+	ApsWifiApConfig((char *)&CliIptArgList[0][0],(char *)&CliIptArgList[1][0]);
 }
 
 void CommandWiFiConfigGetFlash(void)
@@ -238,7 +290,7 @@ void CommandWiFiOnOff(void)
 		esp_wifi_start();
 }
 
-
+unsigned char g_ucOnlyScan = 0;
 void CommandWiFiScan(void)
 {
 	int i = 0;
@@ -246,18 +298,32 @@ void CommandWiFiScan(void)
 	wifi_ap_record_t *ap_records;
 	wifi_scan_config_t scanConf	= {.ssid = NULL,.bssid = NULL,.channel = 0,.show_hidden = 1};
 	ST_WIFI_CONFIG stWifiConfig;
-
+	int ret;
+	
 	if(strlen((char *)&CliIptArgList[0][0]))
 		scanConf.ssid = (uint8_t *)&CliIptArgList[0][0];
 	if(scanConf.ssid)
 		CLI_PRINTF("scanConf.ssid:%s\n\n",(char *)scanConf.ssid);
-	ESP_ERROR_CHECK(esp_wifi_scan_start(&scanConf, 1));//扫描所有可用的AP。;
+	//ESP_ERROR_CHECK(esp_wifi_scan_start(&scanConf, 1));//扫描所有可用的AP。;
+	//before scan, must disconnect
+	g_ucOnlyScan = 1;
+	esp_wifi_disconnect();
+	ret = esp_wifi_scan_start(&scanConf, 1);
+	if(OPP_SUCCESS != ret)
+		CLI_PRINTF("%s\r\n",esp_err_to_name(ret));
+	
+	OS_EVENTGROUP_WAITBIT(g_eventWifi,2,30000);
+	printf("scan done");
+	OS_EVENTGROUP_CLEARBIT(g_eventWifi,2);
+	g_ucOnlyScan = 0;
 
-	esp_wifi_scan_get_ap_num(&apCount);//Get number of APs found in last scan
+	ret = esp_wifi_scan_get_ap_num(&apCount);//Get number of APs found in last scan
+	if(OPP_SUCCESS != ret)
+		CLI_PRINTF("%s\r\n",esp_err_to_name(ret));
 	if (apCount == 0) {
 		CLI_PRINTF("Nothing AP found\r\n");
 		return;
-	}
+	}	
 	wifi_ap_record_t *list = (wifi_ap_record_t *)malloc(sizeof(wifi_ap_record_t) * apCount);
 	//获取上次扫描中找到的AP列表
 	ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&apCount, list));
@@ -291,6 +357,8 @@ void CommandWiFiScan(void)
 	}
 	free(list);
 	CLI_PRINTF("\r\n\r\n");
+	//scan over must reconnect
+	esp_wifi_connect();
 }
 
 

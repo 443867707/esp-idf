@@ -131,6 +131,9 @@ const char* const dfotaDesc[] = {
   "FIRMWARE_UPDATE_FAILED"
 };
 
+const char* const iotAddrArg_desc[] = {
+	"COM_PLT:117.60.157.137,TEST_PLT:180.101.147.115"
+};
 extern ST_BC28_PKT   g_stBc28Pkt;
 
 
@@ -177,7 +180,7 @@ CommandEntry CommandTableBc28[] =
 	CommandEntryActionWithDetails("apnGet", CommandApnGet, "", "nbiot apn get...", NULL),
 	CommandEntryActionWithDetails("cgattSet", CommandCgattSet, "u", "nbiot cgatt set...", NULL),
 	CommandEntryActionWithDetails("cfunSet", CommandCfunSet, "u", "nbiot cfun set...", NULL),
-	CommandEntryActionWithDetails("iotAddrSet", CommandIotAddrSet, "s", "nbiot iot address set...", NULL),
+	CommandEntryActionWithDetails("iotAddrSet", CommandIotAddrSet, "s", "nbiot iot address set...", iotAddrArg_desc),
 	CommandEntryActionWithDetails("iotAddrGet", CommandIotAddrGet, "", "nbiot iot address get...", NULL),
 	CommandEntryActionWithDetails("abnormalSet", CommandBc28AbnormlSet, "u", "nbiot abnormal set...", NULL),
 	CommandEntryActionWithDetails("abnormalGet", CommandBc28AbnormlGet, "", "nbiot abnormal get...", NULL),

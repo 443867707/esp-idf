@@ -1137,6 +1137,9 @@ static void ApsDaemonAlarmReport(U32 index,S32 res,U32 status)
 		/*log[0-1]:alarm id
 		**log[2]:status
 		**log[3-6]:value*/
+		log.id = ALARM_LOGID;
+		log.level = LOG_LEVEL_WARN;
+		log.module = MC_MODULE_DAEMON;
 		log.len =7;
 		*(U16*)log.log = config[index].alarmId;
 		*(U8*)(log.log+2) = (U8)status;
@@ -1322,7 +1325,9 @@ inline U32 getBounceValue(AD_CONFIG_T* config,U32* res)
 	}
 	else
 	{
-		return 3;
+		//return 3;
+		*res = 0;
+		return 0;
 	}
 }
 
@@ -1366,7 +1371,7 @@ static U32 ApdDaemonConditionMathAlarm(S32 index,S32 res,AD_CONFIG_T* config)
         {
         	if(cache_condition != 0) // Try to recovery alarm
         	{
-        		if(res > config->alarmIfPara1 + bounceValue)
+        		if(res >= config->alarmIfPara1 + bounceValue)
         		{
         			condition = 0; // recovery
         		}
@@ -1398,7 +1403,7 @@ static U32 ApdDaemonConditionMathAlarm(S32 index,S32 res,AD_CONFIG_T* config)
         {
         	if(cache_condition != 0) // Try to recovery alarm
         	{
-        		if(res  + bounceValue < config->alarmIfPara1)
+        		if(res  + bounceValue <= config->alarmIfPara1)
         		{
         			condition = 0; // recovery
         		}

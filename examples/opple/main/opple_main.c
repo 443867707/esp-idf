@@ -398,7 +398,7 @@ void app_main()
     xTaskCreate(&OtaThread, "ota_thread", (1024 * 8), NULL, 11, &(gTask[TASK_OTA]));
     xTaskCreate(&task_cli, "task_cli", (1024 * 5), NULL, 9, &(gTask[TASK_CLI]));
     xTaskCreate(&ElecThread, "meter_thread", (1024 * 5), NULL, 8, &(gTask[TASK_METER]));
-	xTaskCreate(&NeulBc28Thread, "nbiot_thread", (1024 * 8), NULL, 12, &(gTask[TASK_NB]));
+	xTaskCreate(&NeulBc28Thread, "nbiot_thread", (1024 * 12), NULL, 12, &(gTask[TASK_NB]));
 	xTaskCreate(&telnetTask, "telnetTask", (1024 * 8), NULL, 11, &(gTask[TASK_TELNET]));
 
 	// Add task to wdt

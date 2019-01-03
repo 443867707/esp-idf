@@ -600,10 +600,10 @@ esp_err_t print_panic_saved(int core_id, char *outBuf)
     nvs_close(my_handle);
     return ESP_OK;
 }
-
+#define PANIC_LEN    200
 static void doBacktrace1(XtExcFrame *frame, int core_id)
 {
-	char buf[1024] ={0};
+	char buf[PANIC_LEN] ={0};
 	int len = 0;
     uint32_t i = 0, pc = frame->pc, sp = frame->a1;
 	int ret;
@@ -620,7 +620,7 @@ static void doBacktrace1(XtExcFrame *frame, int core_id)
        the register window is no longer useful.
     */
     //regdump
-    if (!abort_called) {
+    /*if (!abort_called) {
         len += snprintf(buf+len,1024,"Core%d register dump:\r\n",core_id);
         for (x = 0; x < 24; x += 4) {
             for (y = 0; y < 4; y++) {
@@ -631,16 +631,16 @@ static void doBacktrace1(XtExcFrame *frame, int core_id)
 			len += snprintf(buf+len,1024,"%s","\r\n");
         }
 
-    }
+    }*/
 	//backtrace
-	len += snprintf(buf+len,1024,"%s","\r\nBacktrace:");
+	len += snprintf(buf+len,PANIC_LEN,"%s","\r\nBacktrace:");
     /* Do not check sanity on first entry, PC could be smashed. */
     //putEntry(pc, sp);
     
     if (pc & 0x80000000) {
         pc = (pc & 0x3fffffff) | 0x40000000;
     }
-	len += snprintf(buf+len,1024," 0x%08x:0x%08x",pc,sp);
+	len += snprintf(buf+len,PANIC_LEN," 0x%08x:0x%08x",pc,sp);
 
     pc = frame->a0;
     while (i++ < 100) {
@@ -650,7 +650,13 @@ static void doBacktrace1(XtExcFrame *frame, int core_id)
         }
         sp = *((uint32_t *) (sp - 0x10 + 4));
         //putEntry(pc - 3, sp); // stack frame addresses are return addresses, so subtract 3 to get the CALL address
-		len += snprintf(buf+len,1024," 0x%08x:0x%08x",pc - 3,sp);
+		if(len + 23 > PANIC_LEN-1)
+			break;
+		
+		if (pc & 0x80000000) {
+			pc = (pc & 0x3fffffff) | 0x40000000;
+		}
+		len += snprintf(buf+len,PANIC_LEN," 0x%08x:0x%08x",pc - 3,sp);
         pc = *((uint32_t *) (psp - 0x10));
         if (pc < 0x40000000) {
             break;

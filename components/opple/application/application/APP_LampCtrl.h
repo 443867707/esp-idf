@@ -57,8 +57,8 @@
 #define MANU                           "OPPLE"
 
 //配置数据的版本号
-#define OPP_LAMP_CTRL_CFG_DATA_VER     (783)
-#define OPP_LAMP_CTRL_CFG_DATA_VER_STR "783"
+#define OPP_LAMP_CTRL_CFG_DATA_VER     (784)
+#define OPP_LAMP_CTRL_CFG_DATA_VER_STR "784"
 #define OPP_LAMP_CTRL_CFG_DATA_MAX_VER  (0xFFFF)
         
 #define PRODUCTCLASS                 0xF011                
@@ -87,7 +87,14 @@
 #define INVALIDE_JOBID    0
 #define INVALIDE_PLANID    0
 #define MAX_RUNTIME       0x7FFFFFFF
-
+#define STARTUP_TIME    20000
+#define READPOWER_PERIOD    60000
+#define MAX_LIGHT_TIME    (16777215)
+#define ACTTIME_LEN        18
+//100mW
+#define EXEP_LOW_PWR        35
+//100mW
+#define EXEP_HIGH_PWR       40
 //获取百位数
 #define OPP_HUNDRED_OF_NUMBER(x)                    ((x) / 100)
 //获取十位数
@@ -182,6 +189,8 @@ typedef struct
     //U16  usBri;                           /*0-关, 其他(0~255)-开着时的亮度等级*/ 
 	U32 uwRunTime;
 	U32 uwHisTime;
+	U32 uwLightTime;
+	U32 uwHisLightTime;
 #if 0	
     EN_OPP_CTRL_TYPE enCtrlType;         /*调光控制方式*/
     U8  aucHue[3];                       /*颜色(R-G-B)*/  
@@ -418,6 +427,8 @@ U32 OppLampCtrlRestoreFactory(void);
 int CompareDate(const char * str1,const char * str2);
 int CompareHM(const char * str1,const char * str2);
 U32 OppLampCtrlGetSwitchU32(U8 targetId, U32 * lampSwitch);
+U32 OppLampCtrlGetOnExep(U8 targetId, U32 * exep);
+U32 OppLampCtrlGetOffExep(U8 targetId, U32 * exep);
 U32 OppLampCtrlGetSwitch(U8 targetId, U8 * lampSwitch);
 U32 OppLampCtrlSetSwitch(U8 targetId, U8 lampSwitch);
 U32 OppLampCtrlGetBriU32(U8 targetId, U32 * bri);
@@ -435,5 +446,23 @@ U8 OppLampCtrlGetPhase(void);
 U8 OppLampCtrlGetPlanIdx(void);
 U8 OppLampCtrlGetJobsIdx(void);
 U8 OppLampCtrlGetValidePlanId(int * paiPlanId, int * num);
+void OppLampDelayOnOff(U8 srcChl, U8 sw, U32 sec);
+U32 OppLampCtrlGetLtime(U8 targetId, U32 * ltime);
+U32 OppLampCtrlGetLtimeWithCrc8(U8 targetId, U32 * ltime);
+U32 OppLampCtrlGetHLtime(U8 targetId, U32 * hltime);
+U32 OppLampCtrlGetHLtimeWithCrc8(U8 targetId, U32 * hltime);
+U32 OppLampCtrlSetLtime(U8 targetId, U32 ltime);
+U32 OppLampCtrlSetLtimeWithCrc8(U8 targetId, U32 ltime);
+U32 OppLampCtrlSetHLtime(U8 targetId, U32 hltime);
+U32 OppLampCtrlSetHLtimeWithCrc8(U8 targetId, U32 hltime);
+unsigned int LightTimeCrc8ToLightTime(unsigned int inLtime, unsigned int *outLtime);
+unsigned int LightTimeToLightTimeCrc8(unsigned int inLtime, unsigned int *outLtime);
+unsigned int LightTimeCrcJudge(unsigned int hltime);
+U32 OppLampCtrlHLtimeAdd(U8 num);
+U32 OppLampCtrlLtimeAdd(U8 num);
+U32 OppLampCtrlLightOnOff(int onOff);
+void OppLampDelayInfo(U8 * srcChl, U8 * sw);
+void OppLampActTimeGet(char *buf);
+void OppLampActTimeSet(char *buf);
 
 #endif

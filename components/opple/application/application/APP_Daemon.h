@@ -35,7 +35,7 @@ typedef struct
 }itemIdCustom_t;
 
 #define ACTIOM_MMT_DEFAULT {\
-1,1,1,1,0,0,0,0,0,0,\
+1,1,1,1,1,1,0,0,0,0,\
 1,1,1,1,1,1,1,1,1,1,\
 }
 
@@ -44,8 +44,8 @@ typedef struct
 		{RSC_VOLT,		0, MCA_ALARM+MCA_LOG,10001,AI_LT,166,0,0,0},\
 		{RSC_CURRENT,	0, MCA_ALARM+MCA_LOG,10002,AI_GT,1000,0,0,0},\
 		{RSC_CURRENT,	0, MCA_NONE,10003,AI_LT,0,0,0,0},\
-    	{RSC_TEST,    	0, MCA_NONE,20000,AI_GT,300,0,RI_CHANGE,1},\
-    	{RSC_TEST,      0, MCA_NONE,20000,AI_GT,300,0,RI_CHANGE,1},\
+    	{RSC_EXON,    	0, MCA_ALARM+MCA_LOG,10004,AI_GT,0,0,0,0},\
+    	{RSC_EXOFF,     0, MCA_ALARM+MCA_LOG,10005,AI_GT,0,0,0,0},\
     	{RSC_TEST,      0, MCA_NONE,20000,AI_GT,300,0,RI_CHANGE,1},\
     	{RSC_TEST,   	0, MCA_NONE,20000,AI_GT,300,0,RI_CHANGE,1},\
     	{RSC_TEST,   	0, MCA_NONE,20000,AI_GT,300,0,RI_CHANGE,1},\
@@ -74,6 +74,8 @@ typedef struct
     {RSC_HEART     ,MC_MODULE_GENERAL ,dfun_null},\
     {RSC_LOC       ,MC_MODULE_LOCATION,LocChg},\
     {RSC_TEST      ,MC_MODULE_GENERAL ,CliGetTest1},\
+    {RSC_EXON      ,MC_MODULE_GENERAL ,OppLampCtrlGetOnExep/*getGIU_RSC0*/},\
+    {RSC_EXOFF     ,MC_MODULE_GENERAL ,OppLampCtrlGetOffExep/*getGIU_RSC1*/},\
 }
 
 #define MC_LOG_CONFIG_DEFAULT {\
@@ -122,7 +124,9 @@ typedef enum
     RSC_NB_NETWORK=7,   /* NB Network connecting status */
     RSC_HEART=8,        /* heart beat */
     RSC_LOC=9,			/* loc */   
-    RSC_TEST=10,         /* cli test */
+    RSC_TEST=10,        /* cli test */
+    RSC_EXON=11,
+    RSC_EXOFF=12,
 /***************************/
     RSC_MAX,
 }EN_MC_RESOURCE;

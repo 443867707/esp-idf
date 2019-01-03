@@ -54,6 +54,8 @@ static const char* UART_TAG = "uart";
 #define UART_ENTER_CRITICAL(mux)    portENTER_CRITICAL(mux)
 #define UART_EXIT_CRITICAL(mux)     portEXIT_CRITICAL(mux)
 
+extern SemaphoreHandle_t g_NbRxSem;
+
 typedef struct {
     uart_event_type_t type;        /*!< UART TX data type */
     struct {
@@ -850,7 +852,16 @@ static void uart_rx_intr_handler_default(void *param)
                     uart_clear_intr_status(uart_num, UART_RXFIFO_TOUT_INT_CLR_M | UART_RXFIFO_FULL_INT_CLR_M);
                     uart_event.type = UART_DATA;
                     uart_event.size = rx_fifo_len;
-                    UART_ENTER_CRITICAL_ISR(&uart_selectlock);
+                    // angus add for nb rx sem start
+                    if (uart_num == UART_NUM_1) {
+                           if (uart_intr_status & UART_RXFIFO_TOUT_INT_ST_M) {
+                                //ESP_EARLY_LOGW(UART_TAG, "debug: idle recv a frame %d !!!", rx_fifo_len);
+                                xSemaphoreGiveFromISR(g_NbRxSem, &HPTaskAwoken);
+                            }
+                    }
+                    // angus add for nb rx sem end 
+					
+					UART_ENTER_CRITICAL_ISR(&uart_selectlock);
                     if (p_uart->uart_select_notif_callback) {
                         p_uart->uart_select_notif_callback(uart_num, UART_SELECT_READ_NOTIF, &HPTaskAwoken);
                     }

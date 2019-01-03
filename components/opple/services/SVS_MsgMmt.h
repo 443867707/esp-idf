@@ -7,7 +7,7 @@
 #define MSG_HEAD_SIZE       (MSG_INFO_SIZE+3)
 #define NB_ELE_LEN          (512+MSG_HEAD_SIZE)
 #define WIFI_ELE_LEN        (512+MSG_HEAD_SIZE)
-#define NB_BUF_SIZE         ((NB_ELE_LEN)*4)
+#define NB_BUF_SIZE         ((NB_ELE_LEN)*12)
 #define WIFI_BUF_SIZE       ((WIFI_ELE_LEN)*12)
 #define NB_BUF_TX_IMD_SIZE  ((NB_ELE_LEN)*4)
 
