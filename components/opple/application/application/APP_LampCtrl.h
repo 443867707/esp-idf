@@ -57,8 +57,8 @@
 #define MANU                           "OPPLE"
 
 //配置数据的版本号
-#define OPP_LAMP_CTRL_CFG_DATA_VER     (786)
-#define OPP_LAMP_CTRL_CFG_DATA_VER_STR "786"
+#define OPP_LAMP_CTRL_CFG_DATA_VER     (787)
+#define OPP_LAMP_CTRL_CFG_DATA_VER_STR "787"
 #define OPP_LAMP_CTRL_CFG_DATA_MAX_VER  (0xFFFF)
         
 #define PRODUCTCLASS                 0xF011                

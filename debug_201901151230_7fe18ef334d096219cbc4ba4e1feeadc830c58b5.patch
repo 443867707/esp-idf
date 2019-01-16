@@ -1,0 +1,214 @@
+diff --git a/components/esp32/phy_init.c b/components/esp32/phy_init.c
+index 0e8c9b070..a5e22af42 100644
+--- a/components/esp32/phy_init.c
++++ b/components/esp32/phy_init.c
+@@ -240,7 +240,7 @@ esp_err_t esp_phy_rf_deinit(phy_rf_module_t module)
+             // Update WiFi MAC time before disalbe WiFi/BT common peripheral clock
+             phy_update_wifi_mac_time(true, esp_timer_get_time());
+             // Disable WiFi/BT common peripheral clock. Do not disable clock for hardware RNG
+-            periph_module_disable(PERIPH_WIFI_BT_COMMON_MODULE);
++            //periph_module_disable(PERIPH_WIFI_BT_COMMON_MODULE);
+         }
+     }
+ 
+diff --git a/components/freertos/Kconfig b/components/freertos/Kconfig
+index 1a037377c..b0da53185 100644
+--- a/components/freertos/Kconfig
++++ b/components/freertos/Kconfig
+@@ -384,13 +384,20 @@ config FREERTOS_IDLE_TIME_BEFORE_SLEEP
+ 
+ menuconfig FREERTOS_DEBUG_INTERNALS
+     bool "Debug FreeRTOS internals"
+-    default n
++    default y
+     help
+         Enable this option to show the menu with internal FreeRTOS debugging features.
+         This option does not change any code by itself, it just shows/hides some options.
+ 
+ if FREERTOS_DEBUG_INTERNALS
+ 
++config FREERTOS_ASSERT_IF_YIELD_IN_CRITICAL
++    bool "Detect the non-ISR freertos Queue API called in critical session"
++    depends on FREERTOS_DEBUG_INTERNALS
++    default y
++    help
++        If enabled, assert the system if the non-ISR freertos Queue API is called in critical session.
++
+ config FREERTOS_PORTMUX_DEBUG
+     bool "Debug portMUX portENTER_CRITICAL/portEXIT_CRITICAL"
+     depends on FREERTOS_DEBUG_INTERNALS
+diff --git a/components/freertos/include/freertos/portmacro.h b/components/freertos/include/freertos/portmacro.h
+index 6b98b8269..94f820da3 100644
+--- a/components/freertos/include/freertos/portmacro.h
++++ b/components/freertos/include/freertos/portmacro.h
+@@ -174,6 +174,13 @@ void vPortAssertIfInISR();
+ 
+ #define portCRITICAL_NESTING_IN_TCB 1
+ 
++#if CONFIG_FREERTOS_ASSERT_IF_YIELD_IN_CRITICAL
++void vTaskAssertIfInCritical(void);
++#define portASSERT_IF_IN_CRITICAL() vTaskAssertIfInCritical();
++#else
++#define portASSERT_IF_IN_CRITICAL()
++#endif
++
+ /*
+ Modifications to portENTER_CRITICAL.
+ 
+diff --git a/components/freertos/include/freertos/semphr.h b/components/freertos/include/freertos/semphr.h
+index abe3819f8..2b9b3eb99 100644
+--- a/components/freertos/include/freertos/semphr.h
++++ b/components/freertos/include/freertos/semphr.h
+@@ -310,7 +310,7 @@ typedef QueueHandle_t SemaphoreHandle_t;
+  * @endcode
+  * \ingroup Semaphores
+  */
+-#define xSemaphoreTake( xSemaphore, xBlockTime )		xQueueGenericReceive( ( QueueHandle_t ) ( xSemaphore ), NULL, ( xBlockTime ), pdFALSE )
++#define xSemaphoreTake( xSemaphore, xBlockTime ) xQueueGenericReceive( ( QueueHandle_t ) ( xSemaphore ), NULL, ( xBlockTime ), pdFALSE )
+ 
+ /**
+  * <i>Macro</i> to recursively obtain, or 'take', a mutex type semaphore.
+diff --git a/components/freertos/queue.c b/components/freertos/queue.c
+index a3a14931a..e3492b530 100644
+--- a/components/freertos/queue.c
++++ b/components/freertos/queue.c
+@@ -555,6 +555,8 @@ static void prvInitialiseNewQueue( const UBaseType_t uxQueueLength, const UBaseT
+ #endif
+ /*-----------------------------------------------------------*/
+ 
++extern char* get_task_name(void);
++extern char* get_task_name_from_tcb(void* tcb);
+ #if ( configUSE_RECURSIVE_MUTEXES == 1 )
+ 
+ 	BaseType_t xQueueGiveMutexRecursive( QueueHandle_t xMutex )
+@@ -602,6 +604,10 @@ static void prvInitialiseNewQueue( const UBaseType_t uxQueueLength, const UBaseT
+ 			xReturn = pdFAIL;
+ 
+ 			traceGIVE_MUTEX_RECURSIVE_FAILED( pxMutex );
++
++			ets_printf("[%s] give mutex, [%x] take mutex\n", 
++                                   get_task_name(), get_task_name_from_tcb(pxMutex->pxMutexHolder));
++			abort();
+ 		}
+ 
+ 		return xReturn;
+@@ -708,6 +714,19 @@ static void prvInitialiseNewQueue( const UBaseType_t uxQueueLength, const UBaseT
+ 
+ #endif /* ( ( configUSE_COUNTING_SEMAPHORES == 1 ) && ( configSUPPORT_DYNAMIC_ALLOCATION == 1 ) ) */
+ /*-----------------------------------------------------------*/
++char *s_crash = NULL;
++void mutex_check(QueueHandle_t xQueue)
++{
++#if 0
++    Queue_t * const pxQueue = ( Queue_t * ) xQueue;
++
++    if ( !xPortInIsrContext() && (pxQueue->uxItemSize == 0) && (pxQueue->uxQueueType == queueQUEUE_IS_MUTEX) && pxQueue->pxMutexHolder && (pxQueue->pxMutexHolder != xTaskGetCurrentTaskHandle())) {
++        ets_printf("[%s] give mutex, [%s] take mutex %p\n", 
++                   get_task_name(), get_task_name_from_tcb(pxQueue->pxMutexHolder), xQueue);
++	*s_crash= 0;
++    }
++#endif
++}
+ 
+ BaseType_t xQueueGenericSend( QueueHandle_t xQueue, const void * const pvItemToQueue, TickType_t xTicksToWait, const BaseType_t xCopyPosition )
+ {
+@@ -725,6 +744,11 @@ Queue_t * const pxQueue = ( Queue_t * ) xQueue;
+ 	#endif
+ 
+ 
++	if (xTicksToWait) {
++        	portASSERT_IF_IN_CRITICAL();
++	}
++	mutex_check(xQueue);
++
+ 	/* This function relaxes the coding standard somewhat to allow return
+ 	statements within the function itself.  This is done in the interest
+ 	of execution time efficiency. */
+@@ -1430,7 +1454,6 @@ Queue_t * const pxQueue = ( Queue_t * ) xQueue;
+ 	return xReturn;
+ }
+ /*-----------------------------------------------------------*/
+-
+ BaseType_t xQueueGenericReceive( QueueHandle_t xQueue, void * const pvBuffer, TickType_t xTicksToWait, const BaseType_t xJustPeeking )
+ {
+ BaseType_t xEntryTimeSet = pdFALSE;
+@@ -1450,6 +1473,11 @@ Queue_t * const pxQueue = ( Queue_t * ) xQueue;
+ 	statements within the function itself.  This is done in the interest
+ 	of execution time efficiency. */
+ 
++	if (xTicksToWait) {
++        	portASSERT_IF_IN_CRITICAL();
++	}
++        mutex_check(xQueue);
++
+ 	for( ;; )
+ 	{
+ 		taskENTER_CRITICAL(&pxQueue->mux);
+@@ -2610,5 +2638,3 @@ Queue_t * const pxQueue = ( Queue_t * ) xQueue;
+ 
+ 
+ 
+-
+-
+diff --git a/components/freertos/tasks.c b/components/freertos/tasks.c
+index 00aec93ae..71c42a1ee 100644
+--- a/components/freertos/tasks.c
++++ b/components/freertos/tasks.c
+@@ -4188,6 +4188,17 @@ TCB_t *pxTCB;
+ #endif /* configUSE_MUTEXES */
+ /*-----------------------------------------------------------*/
+ 
++#if CONFIG_FREERTOS_ASSERT_IF_YIELD_IN_CRITICAL
++char *s_crash_debug = NULL;
++void vTaskAssertIfInCritical(void)
++{
++	TCB_t *tcb = xTaskGetCurrentTaskHandle();
++	if ( tcb && tcb->uxCriticalNesting != 0) {
++		*s_crash_debug = 0;
++	}
++}
++#endif
++
+ /* For multicore, this assumes the vPortCPUAquireMutex is recursive, that is, it can be called multiple
+    times and the release call will have to be called as many times for the mux to unlock. */
+ 
+@@ -5171,3 +5182,20 @@ TickType_t uxReturn;
+ 	#include "tasks_test_access_functions.h"
+ #endif
+ 
++char* get_task_name_from_tcb(void *tcb)
++{
++  TCB_t *xTCB = (TCB_t*)tcb;
++
++  if (xTCB) {
++    return &xTCB->pcTaskName[0];
++  } else {
++    return "";
++  }
++}
++
++char* get_task_name(void)
++{
++  TCB_t *xTCB = (TCB_t*)xTaskGetCurrentTaskHandle();
++  return get_task_name_from_tcb(xTCB);
++}
++
+diff --git a/components/newlib/locks.c b/components/newlib/locks.c
+index 026d8013d..36daad8e4 100644
+--- a/components/newlib/locks.c
++++ b/components/newlib/locks.c
+@@ -76,10 +76,14 @@ static void IRAM_ATTR lock_init_generic(_lock_t *lock, uint8_t mutex_type) {
+            without writing wrappers. Doing it this way seems much less
+            spaghetti-like.
+         */
++        portEXIT_CRITICAL(&lock_init_spinlock);
++
+         xSemaphoreHandle new_sem = xQueueCreateMutex(mutex_type);
+         if (!new_sem) {
+             abort(); /* No more semaphores available or OOM */
+         }
++
++        portENTER_CRITICAL(&lock_init_spinlock);
+         *lock = (_lock_t)new_sem;
+     }
+     portEXIT_CRITICAL(&lock_init_spinlock);

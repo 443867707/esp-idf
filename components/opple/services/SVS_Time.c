@@ -816,12 +816,13 @@ U8 timeRecvTimeGet(void)
 
 int TimeCacWeek(int y,int m, int d)
 {
-    int iWeek=(d+2*m+3*(m+1)/5+y+y/4-y/100+y/400)%7;
-
     if(m==1||m==2) {
         m+=12;
         y--;
     }
+
+    int iWeek=(d+2*m+3*(m+1)/5+y+y/4-y/100+y/400)%7;
+
     switch(iWeek)
     {
     case 0: DEBUG_LOG(DEBUG_MODULE_TIME, DLL_INFO,"monday\n"); break;
