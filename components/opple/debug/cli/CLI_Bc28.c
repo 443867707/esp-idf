@@ -611,7 +611,7 @@ void CommandNbImeiGet(void)
 	int sArgc = 0, rArgc = 0;
 	
 	ret = sendEvent(IMEI_EVENT,RISE_STATE,sArgc,sArgv);
-	ret = recvEvent(IMEI_EVENT,&rArgc,rArgv,SEM_WAIT_ALWAYS);
+	ret = recvEvent(IMEI_EVENT,&rArgc,rArgv,EVENT_WAIT_DEFAULT);
 	if(0 != ret){
 		CLI_PRINTF("recvEvent IMEI_EVENT ret fail%d\r\n", ret);
 		ARGC_FREE(rArgc,rArgv);
@@ -771,7 +771,7 @@ void CommandNbDiag(void)
 
 	//bc28 imei
 	ret = sendEvent(IMEI_EVENT,RISE_STATE,sArgc,sArgv);
-	ret = recvEvent(IMEI_EVENT,&rArgc,rArgv,SEM_WAIT_ALWAYS);
+	ret = recvEvent(IMEI_EVENT,&rArgc,rArgv,EVENT_WAIT_DEFAULT);
 	if(0 != ret){
 		CLI_PRINTF("please check nbiot module itself, maybe nbiot module is broken\r\n");
 		ARGC_FREE(rArgc,rArgv);

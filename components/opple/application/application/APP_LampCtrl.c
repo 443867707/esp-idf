@@ -1431,6 +1431,17 @@ U32 OppLampCtrlGetSwitchU32(U8 targetId, U32 * lampSwitch)
 	return OPP_SUCCESS;
 }
 
+static U32 g_ulLampExepPwr = 0;
+U32 OppLampCtrlGetExepPwr()
+{
+	return g_ulLampExepPwr;
+}
+U32 OppLampCtrlSetExepPwr(U32 pwr)
+{
+	g_ulLampExepPwr = pwr;
+	return 0;
+}
+
 U32 OppLampCtrlGetOnExep(U8 targetId, U32 * exep)
 {
 	int state, level;
@@ -1465,13 +1476,23 @@ U32 OppLampCtrlGetOnExep(U8 targetId, U32 * exep)
 		DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "OppLampCtrlGetOnExep timeout tick %d***\r\n",OppTickCountGet());
 		ret = ElecPowerGet(0,&power);
 		if(OPP_SUCCESS != ret){
-			DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "OppLampCtrlGetOnExep call ElecPowerGet err ret %d***\r\n",ret);
+			//DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "OppLampCtrlGetOnExep call ElecPowerGet err ret %d***\r\n",ret);
 			return OPP_FAILURE;
 		}
-		if(power < EXEP_LOW_PWR){
-			*exep = 1;
-		}else if(power > EXEP_HIGH_PWR){
-			*exep = 0;
+		OppLampCtrlSetExepPwr(power/10);
+		//FIXME: max bri(10000) not equal max power(30)
+		if(level == 10000){
+			if(power < MAX_LAMP_PWR){
+				*exep = 1;				
+			}else{
+				*exep = 0;
+			}
+		}else{
+			if(power < EXEP_LOW_PWR){
+				*exep = 1;
+			}else if(power > EXEP_HIGH_PWR){
+				*exep = 0;
+			}
 		}
 		tick1 = 0;
 		return OPP_SUCCESS;		
@@ -1514,9 +1535,10 @@ U32 OppLampCtrlGetOffExep(U8 targetId, U32 * exep)
 		DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "OppLampCtrlGetOffExep timeout tick %d***\r\n",OppTickCountGet());
 		ret = ElecPowerGet(0,&power);
 		if(OPP_SUCCESS != ret){
-			DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "OppLampCtrlGetOffExep call ElecPowerGet err ret %d***\r\n",ret);
+			//DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "OppLampCtrlGetOffExep call ElecPowerGet err ret %d***\r\n",ret);
 			return OPP_FAILURE;
 		}
+		OppLampCtrlSetExepPwr(power/10);
 		if(power > EXEP_HIGH_PWR){
 			*exep = 1;
 		}else if(power < EXEP_LOW_PWR){

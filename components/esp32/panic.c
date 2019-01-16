@@ -480,157 +480,165 @@ static void doBacktrace(XtExcFrame *frame)
 }
 
 #define STORAGE_NAMESPACE "panic"
+#define PANIC_LEN    1024
+static RTC_NOINIT_ATTR uint8_t g_ucOccur = 0x55;
+static RTC_NOINIT_ATTR uint8_t panic0[PANIC_LEN]={0x55};
+static RTC_NOINIT_ATTR uint8_t panic1[PANIC_LEN]={0x55};
+
 esp_err_t save_panic_occur(int8_t occur)
 {
-    nvs_handle my_handle;
-    esp_err_t err;
-    // Open
-    err = nvs_open("panic", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) {
-		ets_printf("nvs_open panic error %x\r\n",err);
-		return err;
-    }
-    err = nvs_set_i8(my_handle, "occur", occur);
-    if (err != ESP_OK) {
-		ets_printf("nvs_set_str backtrace error %x\r\n",err);
-		return err;
-    }
-    // Commit
-    err = nvs_commit(my_handle);
-    if (err != ESP_OK){
-		ets_printf("nvs_commit error %x\r\n",err);
-		return err;
-    }
-    // Close
-    nvs_close(my_handle);
+	g_ucOccur = occur;
     return ESP_OK;
 }
+
 
 esp_err_t print_panic_occur_saved(int8_t *occur)
 {
-    nvs_handle my_handle;
-    esp_err_t err;
-
-    // Open
-    err = nvs_open("panic", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK){
-		ets_printf("nvs_open panic error %x\r\n",err);
-		return err;
-    }
-	err = nvs_get_i8(my_handle, "occur", occur);
-	if (err != ESP_OK) {
-		ets_printf("nvs_get_i8 error %x\r\n",err);
-		return err;
-	}
-    // Close
-    nvs_close(my_handle);
+ 	*occur = g_ucOccur;
     return ESP_OK;
 }
 
-/* Save new run time value in NVS
-   by first reading a table of previously saved values
-   and then adding the new value at the end of the table.
-   Return an error if anything goes wrong
-   during this process.
- */
-esp_err_t save_panic(int core_id, const char *inBuf)
+char *myitoa(int num,char *str,int radix) 
+{  
+	char index[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"; 
+	unsigned unum;
+	int i=0,j,k; 
+	if(radix==10&&num<0)
+	{ 
+		unum=(unsigned)-num; 
+		str[i++]='-'; 
+	} 
+	else unum=(unsigned)num; 
+	do  
+	{ 
+		str[i++]=index[unum%(unsigned)radix]; 
+		unum/=radix; 
+	}while(unum); 
+	str[i]='\0';
+	if(str[0]=='-') k=1;
+	else k=0; 
+	char temp; 
+	for(j=k;j<=(i-k-1)/2.0;j++) 
+	{ 
+		temp=str[j]; 
+		str[j]=str[i-j-1]; 
+		str[i-j-1]=temp; 
+	} 
+	return str; 
+} 
+
+char * mystrstr(const char *str1, const char *str2)
 {
-    nvs_handle my_handle;
-    esp_err_t err;
-	static int8_t occur = 0;
-	char key[5]={0};
-    // Open
-    err = nvs_open("panic", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) {
-		ets_printf("nvs_open panic error %x\r\n",err);
-		return err;
+	char *cp = (char *)str1;
+	char *s1, *s2;
+
+    if (!*str2)
+        return((char *)str1);
+
+    while (*cp)
+    {
+        s1 = cp;
+        s2 = (char *)str2;
+
+        while (*s2 && !(*s1 - *s2))
+            s1++, s2++;
+
+        if (!*s2)
+            return(cp);
+
+        cp++;
     }
+    return(NULL);
+}
+
+void mystrcpy(char *d , char *s )
+{
+	while(*s) *(d++) = *(s++);
+	*d = '\0';
+}
+
+int mystrlen(char* p)
+{
+	int size = 0;
+
+	while(*p)
+	{
+		size++;
+		p++;
+	}
+	return size;
+}
+
+/*  */
+esp_err_t save_panic(int core_id, const char *inBuf, int len)
+{
+	static int8_t occur = 0;
+
+	if(len > PANIC_LEN)
+		len = PANIC_LEN;
 	if(!occur){
-		nvs_erase_all(my_handle);
-	    // Write value including previously saved blob if available
-	    err = nvs_set_i8(my_handle, "occur", 1);
-	    if (err != ESP_OK) {
-			ets_printf("nvs_set_str backtrace error %x\r\n",err);
-			return err;
-	    }
+		memset(panic0,0,PANIC_LEN);
+		memset(panic1,0,PANIC_LEN);
+	    save_panic_occur(1);
 		occur = 1;
 	}
-	snprintf(key,5,"key%d",core_id);
-    err = nvs_set_str(my_handle, key, inBuf);
-    if (err != ESP_OK) {
-		ets_printf("nvs_set_str backtrace error %x\r\n",err);
-		return err;
-    }
-    // Commit
-    err = nvs_commit(my_handle);
-    if (err != ESP_OK){
-		ets_printf("nvs_commit error %x\r\n",err);
-		return err;
-    }
-    // Close
-    nvs_close(my_handle);
+
+	if(0 == core_id)
+		memcpy(panic0,inBuf,len);
+	else
+		memcpy(panic1,inBuf,len);
     return ESP_OK;
 }
+
 esp_err_t erase_panic()
 {
-    nvs_handle my_handle;
-    esp_err_t err;
+	memset(panic0,0x55,PANIC_LEN);
+	memset(panic1,0x55,PANIC_LEN);
+    return ESP_OK;
+}
 
-	// Open
-	err = nvs_open("panic", NVS_READWRITE, &my_handle);
-	if (err != ESP_OK) {
-		ets_printf("nvs_open panic error %x\r\n",err);
-		return err;
-	}
-	nvs_erase_all(my_handle);
-    // Commit
-    err = nvs_commit(my_handle);
-    if (err != ESP_OK){
-		ets_printf("nvs_commit error %x\r\n",err);
-		return err;
-    }
-    // Close
-    nvs_close(my_handle);
-    return ESP_OK;
-}
-/* Read from NVS and print restart counter
-   and the table with run times.
-   Return an error if anything goes wrong
-   during this process.
- */
-esp_err_t print_panic_saved(int core_id, char *outBuf)
+/* output para outbuf must greate than 200*/
+esp_err_t print_panic_saved(int core_id, char *outBuf, int len)
 {
-    nvs_handle my_handle;
-    esp_err_t err;
-	char key[5]={0};
-    // Open
-    err = nvs_open("panic", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK){
-		ets_printf("nvs_open panic error %x\r\n",err);
-		return err;
-    }
-	size_t buf_len_needed;
-	snprintf(key,5,"key%d",core_id);
-	err = nvs_get_str(my_handle, key, NULL, &buf_len_needed);
-	if (err != ESP_OK) {
-		ets_printf("nvs_get_str backtrace1 [%s] error %x\r\n",key,err);
-		return err;
+	int i = 0;
+
+	if(len > PANIC_LEN){
+		len = PANIC_LEN;
 	}
-	size_t buf_len_short = buf_len_needed;
-	err= nvs_get_str(my_handle, key, outBuf, &buf_len_short);
-	if (err != ESP_OK) {
-		ets_printf("nvs_get_str backtrace2 [%s] error %x\r\n",key,err);
-		return err;
+	
+	for(i=0;i<PANIC_LEN;i++){		
+		if(0 == core_id){
+			if(panic0[i] != 0x55)
+				break;
+		}else{
+			if(panic1[i] != 0x55)
+				break;
+		}
 	}
-	//ets_printf(outBuf);
-    // Close
-    nvs_close(my_handle);
+	if(i==PANIC_LEN)
+		return ESP_FAIL;
+
+	if(0 == core_id){
+		if(NULL == mystrstr((char *)panic0,"Backtrace:"))
+			return ESP_FAIL;
+	}else{
+		if(NULL == mystrstr((char *)panic1,"Backtrace:"))
+			return ESP_FAIL;
+	}
+
+	if(0 == core_id){
+		memcpy(outBuf,panic0,PANIC_LEN);
+	}	
+	else{
+		memcpy(outBuf,panic1,PANIC_LEN);
+	}	
     return ESP_OK;
 }
-#define PANIC_LEN    200
+
 static void doBacktrace1(XtExcFrame *frame, int core_id)
 {
 	char buf[PANIC_LEN] ={0};
+	char tmp[20] ={0};
 	int len = 0;
     uint32_t i = 0, pc = frame->pc, sp = frame->a1;
 	int ret;
@@ -638,36 +646,70 @@ static void doBacktrace1(XtExcFrame *frame, int core_id)
     int *regs = (int *)frame;
     int x, y;
     const char *sdesc[] = {
-        "PC      ", "PS      ", "A0      ", "A1      ", "A2      ", "A3      ", "A4      ", "A5      ",
-        "A6      ", "A7      ", "A8      ", "A9      ", "A10     ", "A11     ", "A12     ", "A13     ",
-        "A14     ", "A15     ", "SAR     ", "EXCCAUSE", "EXCVADDR", "LBEG    ", "LEND    ", "LCOUNT  "
+        "PC", "PS", "A0", "A1", "A2", "A3", "A4", "A5",
+        "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13",
+        "A14", "A15", "SAR", "EXCCAUSE", "EXCVADDR", "LBEG", "LEND", "LCOUNT"
     };
 	
     /* only dump registers for 'real' crashes, if crashing via abort()
        the register window is no longer useful.
     */
     //regdump
-    /*if (!abort_called) {
-        len += snprintf(buf+len,1024,"Core%d register dump:\r\n",core_id);
+    if (!abort_called) {
+		buf[len++] = 'C';
+		buf[len++] = 'o';
+		buf[len++] = 'r';
+		buf[len++] = 'e';
+		buf[len++] = core_id==0?'0':'1';
+		buf[len++] = ' ';
+		
         for (x = 0; x < 24; x += 4) {
             for (y = 0; y < 4; y++) {
                 if (sdesc[x + y][0] != 0) {
-                    len += snprintf(buf+len,1024,"%s: 0x%08x  ",sdesc[x + y], regs[x + y + 1]);
+					mystrcpy(&buf[len],sdesc[x + y]);
+					len+=mystrlen(sdesc[x + y]);
+					buf[len++] = ':';
+					buf[len++] = '0';
+					buf[len++] = 'x';
+					myitoa((int)regs[x + y + 1],&buf[len],16);
+					myitoa((int)regs[x + y + 1],tmp,16);
+					len+=mystrlen(tmp);
+					buf[len++] = ' ';
                 }
             }
-			len += snprintf(buf+len,1024,"%s","\r\n");
         }
-
-    }*/
+    }
+	
 	//backtrace
-	len += snprintf(buf+len,PANIC_LEN,"%s","\r\nBacktrace:");
+	//len += mysnprintf(buf+len,PANIC_LEN,"%s","\r\nBacktrace:");
+	buf[len++] = 'B';
+	buf[len++] = 'a';
+	buf[len++] = 'c';
+	buf[len++] = 'k';
+	buf[len++] = 't';
+	buf[len++] = 'r';
+	buf[len++] = 'a';
+	buf[len++] = 'c';
+	buf[len++] = 'e';
+	buf[len++] = ':';
+	buf[len++] = ' ';
+	
     /* Do not check sanity on first entry, PC could be smashed. */
     //putEntry(pc, sp);
     
     if (pc & 0x80000000) {
         pc = (pc & 0x3fffffff) | 0x40000000;
     }
-	len += snprintf(buf+len,PANIC_LEN," 0x%08x:0x%08x",pc,sp);
+	//len += mysnprintf(buf+len,PANIC_LEN," 0x%08x:0x%08x",pc,sp);
+	buf[len++] = '0';
+	buf[len++] = 'x';
+	myitoa(pc,&buf[len],16);
+	len+=8;
+	buf[len++] = ':';
+	buf[len++] = '0';
+	buf[len++] = 'x';
+	myitoa(sp,&buf[len],16);
+	len+=8;
 
     pc = frame->a0;
     while (i++ < 100) {
@@ -683,7 +725,17 @@ static void doBacktrace1(XtExcFrame *frame, int core_id)
 		if (pc & 0x80000000) {
 			pc = (pc & 0x3fffffff) | 0x40000000;
 		}
-		len += snprintf(buf+len,PANIC_LEN," 0x%08x:0x%08x",pc - 3,sp);
+		//len += mysnprintf(buf+len,PANIC_LEN," 0x%08x:0x%08x",pc - 3,sp);
+		buf[len++] = ' ';
+		buf[len++] = '0';
+		buf[len++] = 'x';
+		myitoa(pc - 3,&buf[len],16);
+		len+=8;
+		buf[len++] = ':';
+		buf[len++] = '0';
+		buf[len++] = 'x';
+		myitoa(sp,&buf[len],16);
+		len+=8;
         pc = *((uint32_t *) (psp - 0x10));
         if (pc < 0x40000000) {
             break;
@@ -691,7 +743,7 @@ static void doBacktrace1(XtExcFrame *frame, int core_id)
     }
 	
 	spi_flash_guard_set(&g_flash_guard_no_os_ops);
-	ret = save_panic(core_id,buf);
+	ret = save_panic(core_id,buf,len);
 	if(ESP_OK != ret)
 		ets_printf("save_panic error\r\n");
 	//ret = print_panic_saved(buf);

@@ -285,6 +285,7 @@
 #define PANIC_CMDID            "Panic"
 #define ONLINE_CMDID      "Online"
 #define ONLINEACK_CMDID   "OnlineAck"
+#define REG_CMDID            "Reg"
 
 /** LOG SERVICE **/
 #define LOGSTATUS_CMDID       "LogStatus"
@@ -648,6 +649,8 @@
 #define HV_ELE_NUM_ERR_DESC   "history version array element should be 1"
 #define HV_SET_ERR   497
 #define HV_SET_ERR_DESC   "history version set error"
+#define REG_EMPTY_ERR   498
+#define REG_EMPTY_ERR_DESC   "no register info"
 
 //ÈÕÖ¾·þÎñ´íÎó
 typedef int (*cmdIdFunc)(unsigned char dstChl);
@@ -984,6 +987,7 @@ typedef struct{
 	U8 dstInfo[MSG_INFO_SIZE];
 	U32 logSaveId;
 	U32 reqId;
+	U32 mid;
 }ST_LOG_QUERY_REPORT;
 ////////////////////////////////////////
 typedef struct
@@ -1049,6 +1053,7 @@ typedef struct{
 	int chl;
 	unsigned char type;   /*type=0 主动上报，type=1查询上报type=0可不指定reqId and leftItems*/
 	unsigned int reqId;
+	unsigned int mid;
 	unsigned int leftItems;
 	unsigned int err;	
 	unsigned int logSaveId;
@@ -1254,5 +1259,6 @@ int ApsCoapHeartDisParaSetToFlash(ST_DIS_HEART_SAVE_PARA *pstDisHeartPara);
 int ApsCoapRestoreFactory(void);
 int ApsCoapDoReboot(void);
 int ApsCoapPanicReport(U8 dstChl,unsigned char *dstInfo);
+int ApsCoapRegInfoReport(U8 dstChl,unsigned char *dstInfo);
 
 #endif

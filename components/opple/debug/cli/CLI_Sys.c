@@ -17,7 +17,7 @@
 #include "SVS_Udp.h"
 #include "SVS_Ota.h"
 
-extern esp_err_t print_panic_saved(int core_id, char *outBuf);
+extern esp_err_t print_panic_saved(int core_id, char *outBuf, int len);
 extern esp_err_t print_panic_occur_saved(int8_t *occur);
 extern esp_err_t erase_panic();
 
@@ -549,16 +549,20 @@ void CommandUdpInfo(void)
 void CommandSysGetBackTrace(void)
 {
 	int8_t occur;
-	char buf[200] = {0};
+	char buf[1024] = {0};
 	int ret;
 	
 	ret = print_panic_occur_saved(&occur);
 	if(OPP_SUCCESS == ret){
+		if(0x55 == occur){
+			CLI_PRINTF("no panic occur\r\n");
+			return;
+		}	
 		CLI_PRINTF("occur:%d\r\n",occur);
-		ret = print_panic_saved(0,buf);
+		ret = print_panic_saved(0,buf,1024);
 		if(OPP_SUCCESS == ret)
 			CLI_PRINTF("%s\r\n",buf);
-		ret = print_panic_saved(1,buf);
+		ret = print_panic_saved(1,buf,1024);
 		if(OPP_SUCCESS == ret)
 			CLI_PRINTF("%s\r\n",buf);
 	}

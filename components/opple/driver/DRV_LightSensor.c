@@ -4,7 +4,7 @@
 #include "freertos/semphr.h"
 #include <OPP_Debug.h>
 #include "nvs.h"
-
+#include "OS.h"
 
 static esp_adc_cal_characteristics_t *pLightChars;
 
@@ -18,7 +18,8 @@ static const adc_atten_t atten = ADC_ATTEN_DB_11;
 static const adc_unit_t unit = ADC_UNIT_1;
 
 /*mutex lock to used to operate light sensor*/
-SemaphoreHandle_t g_LightSensorMutex = NULL;
+//SemaphoreHandle_t g_LightSensorMutex = NULL;
+T_MUTEX g_LightSensorMutex;
 
 /*light sensor status*/
 typedef enum _LightSensorStatus {
@@ -35,27 +36,29 @@ static LightSensorStatus_t g_LightSensorStatus = LIGHT_SENSOR_NO_INIT;
 */
 uint8_t BspLightSensorInit()
 {
-    g_LightSensorMutex = xSemaphoreCreateMutex();
+    /*g_LightSensorMutex = xSemaphoreCreateMutex();
     if (g_LightSensorMutex == NULL) {
         DEBUG_LOG(DEBUG_MODULE_LIGHTSENSOR, DLL_ERROR, "create LightSenosrMutex fail \n");
         return 1;
-    }
+    }*/
+    MUTEX_CREATE(g_LightSensorMutex);
 
-    xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
-    
+    //xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    MUTEX_LOCK(g_LightSensorMutex, MUTEX_WAIT_ALWAYS);
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(light_channel, atten);
 
     pLightChars = calloc(1, sizeof(esp_adc_cal_characteristics_t));
     if (pLightChars == NULL) {
+		MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
 
     esp_adc_cal_characterize(unit, atten, ADC_WIDTH_BIT_12, DEFAULT_VREF, pLightChars);
     g_LightSensorStatus = LIGHT_SENSOR_RUNNING;
 
-    xSemaphoreGive(g_LightSensorMutex);
-
+    //xSemaphoreGive(g_LightSensorMutex);
+	MUTEX_UNLOCK(g_LightSensorMutex);
     return 0;
 }
 
@@ -76,7 +79,8 @@ uint8_t BspLightSensorVoltageGet(uint32_t *pVoltage)
         return 1;
     }
 
-    xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    //xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    MUTEX_LOCK(g_LightSensorMutex, MUTEX_WAIT_ALWAYS);
 
     //Multisampling
     uint32_t u32AdcReading = 0;
@@ -87,8 +91,8 @@ uint8_t BspLightSensorVoltageGet(uint32_t *pVoltage)
     //Convert adc_reading to voltage in mV
     *pVoltage = esp_adc_cal_raw_to_voltage(u32AdcReading, pLightChars);
     DEBUG_LOG(DEBUG_MODULE_LIGHTSENSOR, DLL_INFO, "Raw: %u\t light sensor Voltage: %umV\n", u32AdcReading, *pVoltage);
-    xSemaphoreGive(g_LightSensorMutex);
-
+    //xSemaphoreGive(g_LightSensorMutex);
+	MUTEX_UNLOCK(g_LightSensorMutex);
     return 0;
 }
 
@@ -107,7 +111,8 @@ uint8_t BspLightSensorLuxGet(uint32_t *pLux)
         return 1;
     }
 
-    xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    //xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    MUTEX_LOCK(g_LightSensorMutex, MUTEX_WAIT_ALWAYS);
 
     uint32_t u32AdcReading = 0, u32Voltage = 0;
     //Multisampling
@@ -136,8 +141,8 @@ uint8_t BspLightSensorLuxGet(uint32_t *pLux)
 
     DEBUG_LOG(DEBUG_MODULE_LIGHTSENSOR, DLL_INFO, "Raw: %u\t light sensor Voltage: %u mV \t, lux: %u \n", u32AdcReading, u32Voltage, *pLux);
 
-    xSemaphoreGive(g_LightSensorMutex);
-
+    //xSemaphoreGive(g_LightSensorMutex);
+	MUTEX_UNLOCK(g_LightSensorMutex);
     return 0;
 }
 
@@ -152,33 +157,36 @@ uint8_t LightSensorParamSet(uint16_t u16Voltage)
     nvs_handle my_handle;
     esp_err_t err;
 
-    xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    //xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_LightSensorMutex, MUTEX_WAIT_ALWAYS);
 
     err = nvs_open("LiSenParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_LightSensorMutex);
+        //xSemaphoreGive(g_LightSensorMutex);
+        MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
 
     err = nvs_set_blob(my_handle, "LiSenVol", (uint8_t *)&u16Voltage, 2);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_LightSensorMutex);
-
+        //xSemaphoreGive(g_LightSensorMutex);
+        MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
     
     err = nvs_commit(my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_LightSensorMutex);
-
+        //xSemaphoreGive(g_LightSensorMutex);
+        MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_LightSensorMutex);
+    //xSemaphoreGive(g_LightSensorMutex);
+	MUTEX_UNLOCK(g_LightSensorMutex);
 
     return 0;
 }
@@ -200,11 +208,12 @@ uint8_t LightSensorParamGet(uint16_t *pLiSenVol)
         return 1;
     }
 
-    xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    //xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_LightSensorMutex, MUTEX_WAIT_ALWAYS);    
     err = nvs_open("LiSenParam", NVS_READWRITE, &my_handle);
-
     if (err != ESP_OK) {
-        xSemaphoreGive(g_LightSensorMutex);
+        //xSemaphoreGive(g_LightSensorMutex);
+		MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
 
@@ -213,12 +222,14 @@ uint8_t LightSensorParamGet(uint16_t *pLiSenVol)
         DEBUG_LOG(DEBUG_MODULE_LIGHTSENSOR, DLL_ERROR, "light sensor parma : %u \n", *pLiSenVol);
     } else {
         DEBUG_LOG(DEBUG_MODULE_LIGHTSENSOR, DLL_ERROR, "read light sensor param err \n");
-        xSemaphoreGive(g_LightSensorMutex);
+        //xSemaphoreGive(g_LightSensorMutex);
+        MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_LightSensorMutex);
+    //xSemaphoreGive(g_LightSensorMutex);
+	MUTEX_UNLOCK(g_LightSensorMutex);
 
     return 0;
 }
@@ -229,18 +240,21 @@ uint8_t DelLightSensorParam()
 
     nvs_handle my_handle;
 
-    xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+    //xSemaphoreTake(g_LightSensorMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_LightSensorMutex, MUTEX_WAIT_ALWAYS);    
     err = nvs_open("LiSenParam", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_LightSensorMutex);
+        //xSemaphoreGive(g_LightSensorMutex);
+        MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
 
     err = nvs_erase_key(my_handle, "LiSenVol");
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_LightSensorMutex);
+        //xSemaphoreGive(g_LightSensorMutex);
+        MUTEX_UNLOCK(g_LightSensorMutex);
         if (err == ESP_ERR_NVS_NOT_FOUND) {
             return 0;
         }
@@ -250,13 +264,14 @@ uint8_t DelLightSensorParam()
     err = nvs_commit(my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_LightSensorMutex);
+        //xSemaphoreGive(g_LightSensorMutex);
+        MUTEX_UNLOCK(g_LightSensorMutex);
         return 1;
     }
     
     nvs_close(my_handle);
-    xSemaphoreGive(g_LightSensorMutex);
-
+    //xSemaphoreGive(g_LightSensorMutex);
+	MUTEX_UNLOCK(g_LightSensorMutex);
     return 0;
 }
 

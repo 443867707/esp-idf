@@ -16,6 +16,7 @@
 #include "OPP_Debug.h"
 #include "Opp_ErrorCode.h"
 
+#define IMD_ELE_DEPTH   ((NB_BUF_TX_IMD_SIZE)/(NB_ELE_LEN))
 #define NB_ELE_DEPTH    ((NB_BUF_SIZE)/(NB_ELE_LEN))
 #define WIFI_ELE_DEPTH  ((WIFI_BUF_SIZE)/(WIFI_ELE_LEN))
 #define CHL_ID_MAX      2 
@@ -78,7 +79,7 @@ void MsgMmtInit(void)
 	initQueue(&queue_nb_rx,buf_nb_rx,NB_BUF_SIZE,NB_ELE_DEPTH,NB_ELE_LEN);
 	initQueue(&queue_wifi_tx,buf_wifi_tx,WIFI_BUF_SIZE,WIFI_ELE_DEPTH,WIFI_ELE_LEN);
 	initQueue(&queue_wifi_rx,buf_wifi_rx,WIFI_BUF_SIZE,WIFI_ELE_DEPTH,WIFI_ELE_LEN);
-  	initQueue(&queue_nb_tx_imd,buf_nb_tx_imd,NB_BUF_TX_IMD_SIZE,NB_ELE_DEPTH,NB_ELE_LEN);
+  	initQueue(&queue_nb_tx_imd,buf_nb_tx_imd,NB_BUF_TX_IMD_SIZE,IMD_ELE_DEPTH,NB_ELE_LEN);
 
 	for(i=0;i<MAX_MUTEX;i++){
 		MSG_CREATE(i);

@@ -5,6 +5,7 @@
 #include "OPP_Debug.h"
 #include "esp_err.h"
 #include "nvs.h"
+#include "OS.h"
 
 static uint16_t s_u16Level64Vol = 2960;
 static uint16_t s_u16Level192Vol = 8250;
@@ -15,7 +16,8 @@ uint8_t  g_RelayGpioStatus = 0;
 uint8_t  g_DimTypeStatus = 0;
 
 /*mutex lock to used to operate dim func*/
-SemaphoreHandle_t g_DimMutex = NULL; 
+//SemaphoreHandle_t g_DimMutex = NULL; 
+T_MUTEX g_DimMutex;
 
 typedef enum _DimStatus {
     DIM_INIT_NONE,
@@ -81,10 +83,11 @@ uint8_t DimRelayOff()
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     if (g_DimStatus != DIM_INIT_SUCCESS) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+        MUTEX_UNLOCK(g_DimMutex);
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "take mutex fail %s:%d \n", __func__, __LINE__);
         return 1;
     }
@@ -94,8 +97,8 @@ uint8_t DimRelayOff()
         g_RelayGpioStatus = 0;
     }
 
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);
     return u8Ret;
 }
 
@@ -108,10 +111,11 @@ uint8_t DimRelayOn()
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     if (g_DimStatus != DIM_INIT_SUCCESS) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "take mutex fail %s:%d \n", __func__, __LINE__);
         return 1;
     }
@@ -121,8 +125,8 @@ uint8_t DimRelayOn()
         g_RelayGpioStatus = 1;
     }
 
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);
     return u8Ret;
 }
 
@@ -135,10 +139,11 @@ uint8_t DimCtrlSwitchToPwm()
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     if (g_DimStatus != DIM_INIT_SUCCESS) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "take mutex fail %s:%d \n", __func__, __LINE__);
         return 1;
     }
@@ -147,8 +152,8 @@ uint8_t DimCtrlSwitchToPwm()
     if (u8Ret == 0) {
         g_DimTypeStatus = 1;
     }
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);
     return u8Ret;
 }
 
@@ -161,10 +166,11 @@ uint8_t DimCtrlSwitchToDac()
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     if (g_DimStatus != DIM_INIT_SUCCESS) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "take mutex fail %s:%d \n", __func__, __LINE__);
         return 1;
     }
@@ -174,8 +180,8 @@ uint8_t DimCtrlSwitchToDac()
         g_DimTypeStatus = 0;
     }
 
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);
     return u8Ret;
 }
 
@@ -188,14 +194,15 @@ uint8_t DimPwmDutyCycleSet(uint32_t u32Level)
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     /*level 0 ~ 10000() 转换成硬件实际的level 0~8192 */
 
     u32Level = u32Level * PWM_RAW_MAX_LEVEL / PWM_MAX_LEVEL;
 
     if (g_DimStatus != DIM_INIT_SUCCESS) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);        
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "take mutex fail %s:%d \n", __func__, __LINE__);
         return 1;
     }
@@ -205,7 +212,8 @@ uint8_t DimPwmDutyCycleSet(uint32_t u32Level)
         g_PwmLevel = u32Level;
     }
 
-    xSemaphoreGive(g_DimMutex);
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);    
     return u8Ret;
 }
 
@@ -249,10 +257,11 @@ uint8_t DimDacLevelSet(uint16_t u16Level)
     }
 
     DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "raw level %d \n", u8RawLevel);
-
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
     if (g_DimStatus != DIM_INIT_SUCCESS) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "take mutex fail %s:%d \n", __func__, __LINE__);
         return 1;
     }
@@ -262,8 +271,8 @@ uint8_t DimDacLevelSet(uint16_t u16Level)
         g_DacLevel = u8RawLevel;
     }
 
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);    
     return u8Ret;
 }
 
@@ -271,9 +280,11 @@ uint8_t DimDacRawLevelSet(uint8_t u8Level)
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     if (g_DimStatus != DIM_INIT_SUCCESS) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "take mutex fail %s:%d \n", __func__, __LINE__);
         return 1;
     }
@@ -283,8 +294,8 @@ uint8_t DimDacRawLevelSet(uint8_t u8Level)
         g_DacLevel = u8Level;
     }
     
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);	 
     return u8Ret;
 }
 
@@ -330,20 +341,21 @@ uint8_t DimCtrlInit()
 {
     uint8_t u8Ret;
 
-    g_DimMutex = xSemaphoreCreateMutex();
-    
-    if (g_DimMutex == NULL) {
+    //g_DimMutex = xSemaphoreCreateMutex();
+    /*if (g_DimMutex == NULL) {
         g_DimStatus = DIM_INIT_FAIL;
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "create g_DimStatus fail \n");
         return 1; 
-    }
+    }*/
+	 MUTEX_CREATE(g_DimMutex);
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     u8Ret = DimRelayGpioInit();
     if (u8Ret) {
         g_DimStatus = DIM_INIT_FAIL;
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "relay gpio init fail \n");
         return 1;
     }
@@ -351,7 +363,8 @@ uint8_t DimCtrlInit()
     u8Ret = DimSwitchGpioInit();
     if (u8Ret) {
         g_DimStatus = DIM_INIT_FAIL;
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "dim switch gpio init fail \n");
         return 1;
     }
@@ -359,7 +372,8 @@ uint8_t DimCtrlInit()
     u8Ret = BspDacEnable();
     if (u8Ret) {
         g_DimStatus = DIM_INIT_FAIL;
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	         
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "dac enable fail \n");
         return 1;
     }
@@ -367,7 +381,8 @@ uint8_t DimCtrlInit()
     u8Ret = BspInitPwm();
     if (u8Ret) {
         g_DimStatus = DIM_INIT_FAIL;
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_ERROR, "pwm init fail \n");
         return 1;
     }
@@ -375,7 +390,8 @@ uint8_t DimCtrlInit()
     g_DimStatus = DIM_INIT_SUCCESS;
 
     GetCalParam(); 
-    xSemaphoreGive(g_DimMutex);
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);	 
     return 0;
 }
 
@@ -391,32 +407,32 @@ uint8_t DacLevel64ParamSet(uint16_t u16DacOutput)
     nvs_handle my_handle;
     esp_err_t err;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
 
     DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "set level value : %u  \n", u16DacOutput);    
 
     err = nvs_open("DacParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_DimMutex);
-
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
     err = nvs_set_blob(my_handle, "DacLevel64", (uint8_t *)&u16DacOutput, 2);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_DimMutex);
-
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
     
     err = nvs_commit(my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_DimMutex);
-
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
@@ -424,8 +440,8 @@ uint8_t DacLevel64ParamSet(uint16_t u16DacOutput)
 
     s_u16Level64Vol = u16DacOutput;
 
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);	 
     return 0;
 }
 
@@ -439,22 +455,22 @@ uint8_t DacLevel192ParamSet(uint16_t u16DacOutput)
     nvs_handle my_handle;
     esp_err_t err;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "set level 192 param value : %u  \n", u16DacOutput);    
     err = nvs_open("DacParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_DimMutex);
-
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
     err = nvs_set_blob(my_handle, "DacLevel192", (uint8_t *)&u16DacOutput, 2);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_DimMutex);
-
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
@@ -462,16 +478,16 @@ uint8_t DacLevel192ParamSet(uint16_t u16DacOutput)
     err = nvs_commit(my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_DimMutex);
-
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
     nvs_close(my_handle);
     s_u16Level192Vol = u16DacOutput;
 
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);	 
     return 0;
 }
 
@@ -492,13 +508,14 @@ uint8_t DacLevel64ParamGet(uint16_t *pDacLevelVol)
         return 1;
     }
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
 
     err = nvs_open("DacParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
@@ -507,12 +524,14 @@ uint8_t DacLevel64ParamGet(uint16_t *pDacLevelVol)
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "DacLevel64 vol : %u \n", *pDacLevelVol);
     } else {
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "read DacLevel64 vol err \n", *pDacLevelVol);
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_DimMutex);
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);	 
     return 0;
 }
 
@@ -533,11 +552,13 @@ uint8_t DacLevel192ParamGet(uint16_t *pDacLevelVol)
         return 1;
     }
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     err = nvs_open("DacParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
@@ -547,12 +568,14 @@ uint8_t DacLevel192ParamGet(uint16_t *pDacLevelVol)
     } else {
         DEBUG_LOG(DEBUG_MODULE_LAMPCTRL, DLL_INFO, "read DacLevel192 vol err \n");
         nvs_close(my_handle);
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_DimMutex);
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);	 
     return 0;
 }
 
@@ -562,12 +585,13 @@ uint8_t delDacCalParam()
 
     nvs_handle my_handle;
 
-    xSemaphoreTake(g_DimMutex, portMAX_DELAY);
-
+    //xSemaphoreTake(g_DimMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_DimMutex, MUTEX_WAIT_ALWAYS);
     err = nvs_open("DacParam", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
 
@@ -575,7 +599,8 @@ uint8_t delDacCalParam()
     if (err != ESP_OK) {
         if (err != ESP_ERR_NVS_NOT_FOUND) {
             nvs_close(my_handle);
-            xSemaphoreGive(g_DimMutex);
+            //xSemaphoreGive(g_DimMutex);
+			MUTEX_UNLOCK(g_DimMutex);	 
             return 1;
         }
     }
@@ -584,7 +609,8 @@ uint8_t delDacCalParam()
     if (err != ESP_OK) {
         if (err != ESP_ERR_NVS_NOT_FOUND) {
             nvs_close(my_handle);
-            xSemaphoreGive(g_DimMutex);
+            //xSemaphoreGive(g_DimMutex);
+			MUTEX_UNLOCK(g_DimMutex);	 
             return 1;
         }
     }
@@ -592,13 +618,14 @@ uint8_t delDacCalParam()
     err = nvs_commit(my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
-        xSemaphoreGive(g_DimMutex);
+        //xSemaphoreGive(g_DimMutex);
+		MUTEX_UNLOCK(g_DimMutex);	 
         return 1;
     }
     
     nvs_close(my_handle);
-    xSemaphoreGive(g_DimMutex);
-
+    //xSemaphoreGive(g_DimMutex);
+	MUTEX_UNLOCK(g_DimMutex);	 
     return 0;
 }
 

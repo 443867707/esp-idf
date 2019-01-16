@@ -366,6 +366,7 @@ void CommandGetRetrySpec(void)
 
 void CommandHeartBeat(void)
 {
+	ApsCoapRegInfoReport(0,NULL);
 	ApsCoapOceanconHeart(0/*CHL_NB*/);
 }
 

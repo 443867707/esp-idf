@@ -853,12 +853,12 @@ static void uart_rx_intr_handler_default(void *param)
                     uart_event.type = UART_DATA;
                     uart_event.size = rx_fifo_len;
                     // angus add for nb rx sem start
-                    if (uart_num == UART_NUM_1) {
+                    /*if (uart_num == UART_NUM_1) {
                            if (uart_intr_status & UART_RXFIFO_TOUT_INT_ST_M) {
                                 //ESP_EARLY_LOGW(UART_TAG, "debug: idle recv a frame %d !!!", rx_fifo_len);
                                 xSemaphoreGiveFromISR(g_NbRxSem, &HPTaskAwoken);
                             }
-                    }
+                    }*/
                     // angus add for nb rx sem end 
 					
 					UART_ENTER_CRITICAL_ISR(&uart_selectlock);
@@ -917,6 +917,19 @@ static void uart_rx_intr_handler_default(void *param)
                     pat_flg = 1;
                 }
             }
+
+            // angus add for nb rx sem start
+            if (uart_num == UART_NUM_1) {
+            	if (uart_intr_status & UART_RXFIFO_TOUT_INT_ST_M) {
+                	xSemaphoreGiveFromISR(g_NbRxSem, &HPTaskAwoken);
+                	if(HPTaskAwoken == pdTRUE) {
+                    		portYIELD_FROM_ISR();
+                	}
+                }
+            }
+
+            // angus add for nb rx sem end 
+
         } else if(uart_intr_status & UART_RXFIFO_OVF_INT_ST_M) {
             // When fifo overflows, we reset the fifo.
             UART_ENTER_CRITICAL_ISR(&uart_spinlock[uart_num]);

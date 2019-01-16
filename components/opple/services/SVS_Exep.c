@@ -23,12 +23,12 @@ inline U32 isResetReasonPowerOn(RESET_REASON reason)
 	}
 }*/
 
-extern esp_err_t print_panic_saved(int core_id, char *outBuf);
+extern esp_err_t print_panic_saved(int core_id, char *outBuf, int len);
 extern esp_err_t print_panic_occur_saved(int8_t *occur);
 extern esp_err_t save_panic_occur(int8_t occur);
 
-static char core0Panic[200] = {0};
-static char core1Panic[200] = {0};
+static char core0Panic[1024] = {0};
+static char core1Panic[1024] = {0};
 
 U32 ApsExepInit()
 {
@@ -42,12 +42,12 @@ U32 ApsExepInit()
 	ret = print_panic_occur_saved(&occur);
 	if(OPP_SUCCESS == ret && occur){
 		printf("******* backtrace**************\r\n");		
-		ret = print_panic_saved(0,core0Panic);
+		ret = print_panic_saved(0,core0Panic,1024);
 		if(OPP_SUCCESS == ret)
-			printf("%s\r\n",core0Panic);
-		ret = print_panic_saved(1,core1Panic);
+			printf("core0:%s\r\n",core0Panic);
+		ret = print_panic_saved(1,core1Panic,1024);
 		if(OPP_SUCCESS == ret)
-			printf("%s\r\n",core1Panic);
+			printf("core1:%s\r\n",core1Panic);
 		save_panic_occur(0);		
 	}
 	

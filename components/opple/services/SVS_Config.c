@@ -98,6 +98,7 @@ int OppCoapIOTSetConfigToFlash(ST_IOT_CONFIG *pstConfigPara)
 	ret = AppParaWrite(APS_PARA_MODULE_APS_IOT, IOTCONFIG_ID, (unsigned char *)pstConfigPara, sizeof(ST_IOT_CONFIG));
 	if(OPP_SUCCESS != ret){
 		//DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"OppCoapIOTSetConfigToFlash write flash ret %d\r\n", ret);
+		MUTEX_UNLOCK(g_stIotMutex);
 		return ret;
 	}
 	
@@ -244,7 +245,7 @@ void OppCoapLoop(void)
 				ret = NeulBc28SetCdpServer(stIotConfigPara.ocIp);
 				if(0 == ret){
 					DEBUG_LOG(DEBUG_MODULE_BC28, DLL_ERROR, "[%d]NeulBc28SetCdpServer fail ret %d\r\n", OppTickCountGet(), ret);	  
-					return ret;
+					return;
 				}
 				NeulBc28Sleep(30);		
 				//if iot regmod=auto chang to manu and hard reboot
@@ -253,7 +254,7 @@ void OppCoapLoop(void)
 					ret = NeulBc28HuaweIotSetRegmod(0);
 					if(0 != ret){
 						DEBUG_LOG(DEBUG_MODULE_BC28, DLL_ERROR, "[%d]NeulBc28HuaweIotSetRegmod fail ret %d\r\n", OppTickCountGet(), ret);	  
-						return ret;
+						return;
 					}
 				}
 				NeulBc28SetLastIotState(NeulBc28GetIotState());

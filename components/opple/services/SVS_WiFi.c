@@ -165,7 +165,7 @@ int NbImeiGet(char *imei)
 	int sArgc = 0, rArgc = 0;
 	
 	ret = sendEvent(IMEI_EVENT,RISE_STATE,sArgc,sArgv);
-	ret = recvEvent(IMEI_EVENT,&rArgc,rArgv,SEM_WAIT_ALWAYS);
+	ret = recvEvent(IMEI_EVENT,&rArgc,rArgv,EVENT_WAIT_DEFAULT);
 	if(0 != ret){
 		CLI_PRINTF("recvEvent IMEI_EVENT ret fail%d\r\n", ret);
 		ARGC_FREE(rArgc,rArgv);
@@ -432,7 +432,7 @@ void eventLoop()
 void wifiTask(void *pvParameters)
 {
     for(;;) {
-		apStartLoop();
+		//apStartLoop();
 		eventLoop();
 		vTaskDelay(10 / portTICK_PERIOD_MS);
     }
@@ -802,7 +802,7 @@ void ApsWifiInit(void)
 		ApsWifiConfigWrite(&g_stWifiConfigDefault);
 	}
 	initQueue(&queue_event,queue_event_buf,sizeof(system_event_t)*EVENT_QUEUE_MAX,EVENT_QUEUE_MAX,sizeof(system_event_t));
-    xTaskCreate(&wifiTask, "wifiTask", 8*1024, NULL, 11, NULL);
+    xTaskCreatePinnedToCore(&wifiTask, "wifiTask", 8*1024, NULL, 11, NULL, 0);
 	initialise_wifi();
 	//wifi_init_softap();
 	wifi_init_sta();

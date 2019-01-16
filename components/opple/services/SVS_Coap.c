@@ -570,7 +570,11 @@ int ApsCoapAlarmReport(ST_ALARM_PARA *pstAlarmPara)
     cJSON_AddItemToObject(cmdData, "time", cJSON_CreateString(buffer));
     cJSON_AddItemToObject(cmdData, "alarmId", cJSON_CreateNumber(pstAlarmPara->alarmId));
     cJSON_AddItemToObject(cmdData, "status", cJSON_CreateNumber(pstAlarmPara->status));
-	itoa(pstAlarmPara->value, buffer, 10);
+	if(10004 == pstAlarmPara->alarmId || 10005 == pstAlarmPara->alarmId){
+		itoa(OppLampCtrlGetExepPwr(),buffer,10);
+	}else{
+		itoa(pstAlarmPara->value, buffer, 10);
+	}
 	cJSON_AddItemToObject(cmdData, "val", cJSON_CreateString(buffer));
 
 	ret = JsonCompres(root, (char *)coapmsgTx, &outLength);
@@ -618,15 +622,18 @@ int ApsCoapLogReport(ST_LOG_PARA *pstLogPara)
 			if(OPP_SUCCESS != ret){
 				return ret;
 			}
-			
-			ret = OppCoapSend(pstLogPara->chl, pstLogPara->dstInfo, CMD_MSG, REPORT_T, LOG_SERVICE, 0, coapmsgTx, outLength, OppCoapMidGet());
+			if(CHL_NB == pstLogPara->chl)
+				ret = OppCoapSend(pstLogPara->chl, pstLogPara->dstInfo, CMD_MSG, REPORT_T, LOG_SERVICE, 0, coapmsgTx, outLength, OppCoapMidGet());
+			else
+				ret = OppCoapSend(pstLogPara->chl, pstLogPara->dstInfo, CMD_MSG, REPORT_T, LOG_SERVICE, 0, coapmsgTx, outLength, pstLogPara->mid);
 			if(OPP_SUCCESS != ret){
 				return ret;
 			}
 			if(pstLogPara->chl == CHL_NB){
 				ApsCoapSetLogReportStatus(LOG_SEND_ING,OppCoapMidGet());
 			}
-			OppCoapMidIncrease();
+			if(CHL_NB == pstLogPara->chl)
+				OppCoapMidIncrease();
 			return OPP_SUCCESS;
 		}
 	}
@@ -681,15 +688,18 @@ int ApsCoapLogReport(ST_LOG_PARA *pstLogPara)
 	if(OPP_SUCCESS != ret){
 		return ret;
 	}
-
-	ret = OppCoapSend(pstLogPara->chl, pstLogPara->dstInfo, CMD_MSG, REPORT_T, LOG_SERVICE, 0, coapmsgTx, outLength, OppCoapMidGet());
+	if(CHL_NB == pstLogPara->chl)
+		ret = OppCoapSend(pstLogPara->chl, pstLogPara->dstInfo, CMD_MSG, REPORT_T, LOG_SERVICE, 0, coapmsgTx, outLength, OppCoapMidGet());
+	else
+		ret = OppCoapSend(pstLogPara->chl, pstLogPara->dstInfo, CMD_MSG, REPORT_T, LOG_SERVICE, 0, coapmsgTx, outLength, pstLogPara->mid);
 	if(OPP_SUCCESS != ret){
 		return ret;
 	}
 	if(pstLogPara->chl == CHL_NB){
 		ApsCoapSetLogReportStatus(LOG_SEND_ING, OppCoapMidGet());
 	}
-	OppCoapMidIncrease();
+	if(CHL_NB == pstLogPara->chl)
+		OppCoapMidIncrease();
 
 	return OPP_SUCCESS;
 }
@@ -6524,7 +6534,7 @@ int ApsCoapAttachProc(unsigned char dstChl, unsigned char *dstInfo, unsigned cha
 	return OPP_SUCCESS;	
 }
 
-extern esp_err_t print_panic_saved(int core_id, char *outBuf);
+extern esp_err_t print_panic_saved(int core_id, char *outBuf, int len);
 
 int ApsCoapPanicProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char isNeedRsp, cJSON *json, U32 mid)
 {
@@ -6569,8 +6579,8 @@ int ApsCoapPanicProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char
 			cJSON_AddItemToObject(cmdDataRe, "panic1", cJSON_CreateString(ptr));
 		}
 	}else{
-		ret0 = print_panic_saved(0,panic0);
-		ret1 = print_panic_saved(1,panic1);
+		ret0 = print_panic_saved(0,panic0,1024);
+		ret1 = print_panic_saved(1,panic1,1024);
 		if(OPP_SUCCESS != ret0 && OPP_SUCCESS != ret1){
 			ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,PANIC_CMDID,reqId,0,PANIC_EMPTY_ERR,PANIC_EMPTY_ERR_DESC,NULL,mid);
 			return OPP_SUCCESS;
@@ -6592,6 +6602,66 @@ int ApsCoapPanicProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char
 		}
 	}
 	ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,PANIC_CMDID,reqId,0,0,NULL,cmdDataRe,mid);
+	
+	return OPP_SUCCESS;	
+}
+
+int ApsCoapRegInfoProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char isNeedRsp, cJSON *json, U32 mid)
+{
+	int reqId = 0;
+	cJSON *cmdData, *cmdDataRe, *comObj;
+	char *ptr0 = NULL;
+	char *ptr;
+	int core;
+	int ret0,ret1;
+	char tmp[512] = {0};
+	int len = 0;
+	
+	APS_COAP_NULL_POINT_CHECK(json);
+	APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,REG_CMDID,json,"reqId",mid);	
+	reqId = cJSON_GetObjectItem(json, "reqId")->valueint;
+	APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,REG_CMDID,json,"cmdData",mid);
+	cmdData = cJSON_GetObjectItem(json, "cmdData");
+	APS_COAPS_FUNC_JSON_FORMAT_ERROR_WITHOUT_FREE_WITH_RET(dstChl,dstInfo,isNeedRsp,reqId,FUNC_SERVICE,REG_CMDID,cmdData,"core",mid);
+	core = cJSON_GetObjectItem(cmdData, "core")->valueint;
+
+	if(0 == core){
+		ApsExepGetPanic(0,&ptr);
+	}else{
+		ApsExepGetPanic(1,&ptr);
+	}
+	if(0 == strlen(ptr)){
+		ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,REG_CMDID,reqId,0,REG_EMPTY_ERR,REG_EMPTY_ERR_DESC,NULL,mid);
+		return OPP_SUCCESS;
+	}
+	if(NULL == strstr(ptr, "Core")){
+		ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,REG_CMDID,reqId,0,REG_EMPTY_ERR,REG_EMPTY_ERR_DESC,NULL,mid);
+		return OPP_SUCCESS;
+	}
+	ptr0 = strstr(ptr, "Backtrace:");
+	if(ptr0){
+		len = ptr0>ptr?ptr0-ptr:ptr-ptr0;
+		//ptr = &ptr[len];
+		strncpy(tmp,ptr,len);
+		ptr = tmp;
+	}
+	if(0 == len){
+		ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,REG_CMDID,reqId,0,REG_EMPTY_ERR,REG_EMPTY_ERR_DESC,NULL,mid);
+		return OPP_SUCCESS;
+	}
+	cmdDataRe = cJSON_CreateObject();
+	if(NULL == cmdDataRe){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapRegInfoProc create <cmdData> object error\r\n");
+		ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,REG_CMDID,reqId,0,MEMORY_ERR,MEMORY_ERR_DESC,NULL,mid);
+		return OPP_FAILURE;
+	}
+	if(0 == core){
+		cJSON_AddItemToObject(cmdDataRe, "core0", cJSON_CreateString(ptr));
+	}	else{
+		cJSON_AddItemToObject(cmdDataRe, "core1", cJSON_CreateString(ptr));
+	}
+	ApsCoapFuncRsp(dstChl,dstInfo,isNeedRsp,FUNC_SERVICE,REG_CMDID,reqId,0,0,NULL,cmdDataRe,mid);
 	
 	return OPP_SUCCESS;	
 }
@@ -6725,6 +6795,9 @@ void ApsCoapFuncProc(unsigned char dstChl, unsigned char *dstInfo, unsigned char
 			}
 			else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, PANIC_CMDID)){
 				ApsCoapPanicProc(dstChl,dstInfo,isNeedRsp,json,mid);
+			}
+			else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, REG_CMDID)){
+				ApsCoapRegInfoProc(dstChl,dstInfo,isNeedRsp,json,mid);
 			}
 			/*else if(0 == strcmp(cJSON_GetObjectItem(json, "cmdId")->valuestring, FCT_CMDID)){
 				
@@ -7034,6 +7107,7 @@ int ApsCoapLog(unsigned char dstChl, unsigned char *dstInfo, unsigned char isNee
 						memcpy(qReport.dstInfo,dstInfo,sizeof(qReport.dstInfo));
 					qReport.logSaveId = j;
 					qReport.reqId = reqId;
+					qReport.mid = mid;
 					ret = pushQueue(&queue_qlog,(unsigned char*)&qReport,0);
 					if(OPP_SUCCESS != ret){
 						DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"~ApsCoapLog pushQueue ret %d~~~~\r\n", ret);
@@ -7048,6 +7122,7 @@ int ApsCoapLog(unsigned char dstChl, unsigned char *dstInfo, unsigned char isNee
 					memcpy(qReport.dstInfo,dstInfo,sizeof(qReport.dstInfo));
 				qReport.logSaveId = num;
 				qReport.reqId = reqId;
+				qReport.mid = mid;
 				ret = pushQueue(&queue_qlog,(unsigned char*)&qReport,0);
 				if(OPP_SUCCESS != ret){
 					DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"~ApsCoapLog pushQueue ret %d~~~~\r\n", ret);
@@ -8056,6 +8131,7 @@ int ApsCoapQueryLogReport()
 		if(memcmp(qReport.dstInfo,zeroInfo,sizeof(zeroInfo)))
 			memcpy(stLogPara.dstInfo,qReport.dstInfo,sizeof(qReport.dstInfo));
 		stLogPara.reqId = qReport.reqId;
+		stLogPara.mid = qReport.mid;
 		stLogPara.type = QUERY_REPORT;
 		stLogPara.logSaveId = qReport.logSaveId;
 		stLogPara.leftItems = lengthQueue(&queue_qlog);
@@ -8268,6 +8344,7 @@ void ApsCoapLoop(void)
 	ApsCoapOnlineTimeout();
 	ApsCoapExep();
 	ApsCoapPanicReport(CHL_NB,NULL);
+	ApsCoapRegInfoReport(CHL_NB,NULL);
 	ApsCoapWifiConDelay();
 	//ApsCoapRandHeartTimeout();
 }
@@ -8908,7 +8985,7 @@ int ApsCoapExepReport(U8 dstChl, unsigned char * dstInfo, int exepNum, ST_EXEP_I
 
 int ApsCoapPanicReport(U8 dstChl,unsigned char *dstInfo)
 {
-	int ret;
+	int ret = OPP_SUCCESS;
 	U8 coapmsgTx[JSON_S_MAX_LEN] = {0};
 	cJSON * root;
 	cJSON * cmdData, *comObj;
@@ -8926,14 +9003,18 @@ int ApsCoapPanicReport(U8 dstChl,unsigned char *dstInfo)
 	ApsExepGetPanic(0,&ptr0);
 	ApsExepGetPanic(1,&ptr1);
 	if(0 == strlen(ptr0) && 0 == strlen(ptr1))
-		return OPP_SUCCESS;
+		goto END;
 
+	if((NULL == strstr(ptr0,"Backtrace:")) && (NULL == strstr(ptr1,"Backtrace:")))
+		goto END;
+	
 	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"ApsCoapPanicReport\r\n");
 	root =	cJSON_CreateObject();
 	if(NULL == root){
 		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
 		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapPanicReport create <root> object error\r\n");
-		return OPP_FAILURE;
+		ret = OPP_FAILURE;
+		goto END;
 	}		
 	cJSON_AddItemToObject(root, "reqId", cJSON_CreateNumber(reqId = OppCoapReqIdGen()));
 	cJSON_AddItemToObject(root, "cmdId", cJSON_CreateString(PANIC_CMDID));
@@ -8942,7 +9023,8 @@ int ApsCoapPanicReport(U8 dstChl,unsigned char *dstInfo)
 		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
 		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapPanicReport create <cmdData> object error\r\n");
 		cJSON_Delete(root);
-		return OPP_FAILURE;
+		ret = OPP_FAILURE;
+		goto END;
 	}
 	cJSON_AddItemToObject(root, "cmdData", cmdData);
 	comObj = cJSON_CreateObject();
@@ -8950,7 +9032,8 @@ int ApsCoapPanicReport(U8 dstChl,unsigned char *dstInfo)
 		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
 		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapPanicReport create nbState <comObj> object error\r\n");
 		cJSON_Delete(root);
-		return OPP_FAILURE;
+		ret = OPP_FAILURE;
+		goto END;
 	}
 	ptr = strstr(ptr0,"Backtrace:");
 	if(ptr)
@@ -8961,8 +9044,9 @@ int ApsCoapPanicReport(U8 dstChl,unsigned char *dstInfo)
 	JsonCompres(root, (char *)&coapmsgTx, &outLength);
 	OppCoapSend(dstChl, dstInfo, CMD_MSG, REPORT_T, FUNC_SERVICE,0,coapmsgTx, outLength, OppCoapMidGet());	
 	OppCoapMidIncrease();
+END:	
 	report = 1;
-	return OPP_SUCCESS;
+	return ret;
 }
 int ApsCoapExep(void)
 {
@@ -9002,5 +9086,88 @@ int ApsCoapExep(void)
 		return OPP_FAILURE;
 	}
 	return OPP_SUCCESS;
+}
+
+int ApsCoapRegInfoReport(U8 dstChl,unsigned char *dstInfo)
+{
+	int ret = OPP_SUCCESS;
+	U8 coapmsgTx[JSON_S_MAX_LEN] = {0};
+	char tmp[512] = {0};
+	cJSON * root;
+	cJSON * cmdData, *comObj;
+	U16 outLength = 0;
+	int reqId = 0;
+	char *ptr0 = NULL;
+	char *ptr;
+	static U8 phase = 0;
+	int len = 0;
+	
+	if(BC28_READY != NeulBc28GetDevState())
+		return OPP_SUCCESS;
+
+	if(0 == phase){
+		ApsExepGetPanic(0,&ptr);
+	}else if(1 == phase){
+		ApsExepGetPanic(1,&ptr);
+	}else{
+		return OPP_SUCCESS;
+	}
+
+	if(0 == strlen(ptr))
+		goto END;
+
+	if(NULL == strstr(ptr,"Core"))
+		goto END;
+	
+	ptr0 = strstr(ptr, "Backtrace:");
+	if(ptr0){
+		len = ptr0>ptr?ptr0-ptr:ptr-ptr0;
+		printf("len:%d\r\n",len);
+		strncpy(tmp,ptr,len);
+		ptr = tmp;
+	}
+	if(len ==0)
+		goto END;
+	DEBUG_LOG(DEBUG_MODULE_COAP, DLL_INFO,"ApsCoapRegInfoReport\r\n");
+	root =	cJSON_CreateObject();
+	if(NULL == root){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapRegInfoReport create <root> object error\r\n");
+		ret = OPP_FAILURE;
+		goto END;
+	}
+	cJSON_AddItemToObject(root, "reqId", cJSON_CreateNumber(reqId = OppCoapReqIdGen()));
+	cJSON_AddItemToObject(root, "cmdId", cJSON_CreateString(REG_CMDID));
+	cmdData =  cJSON_CreateObject();
+	if(NULL == cmdData){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapPanicReport create <cmdData> object error\r\n");
+		cJSON_Delete(root);
+		ret = OPP_FAILURE;
+		goto END;
+	}
+	cJSON_AddItemToObject(root, "cmdData", cmdData);
+	comObj = cJSON_CreateObject();
+	if(NULL == comObj){
+		MakeErrLog(DEBUG_MODULE_COAP,OPP_COAP_CREATE_OBJ_ERR);
+		DEBUG_LOG(DEBUG_MODULE_COAP, DLL_ERROR,"ApsCoapPanicReport create nbState <comObj> object error\r\n");
+		cJSON_Delete(root);
+		ret = OPP_FAILURE;
+		goto END;
+	}
+	if(0 == phase)
+		cJSON_AddItemToObject(cmdData, "core0", cJSON_CreateString(ptr));
+	else
+		cJSON_AddItemToObject(cmdData, "core1", cJSON_CreateString(ptr));
+	JsonCompres(root, (char *)&coapmsgTx, &outLength);
+	OppCoapSend(dstChl, dstInfo, CMD_MSG, REPORT_T, FUNC_SERVICE,0,coapmsgTx, outLength, OppCoapMidGet());	
+	OppCoapMidIncrease();
+END:
+	if(0 == phase){
+		phase = 1;
+	}else if(1 == phase){
+		phase = 2;
+	}
+	return ret;
 }
 

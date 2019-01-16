@@ -394,6 +394,10 @@ U8 OppLight_Bri_Init(const U8 index, const t_bsp_output_cb* sBspOutputCb, const 
 		gBriContex[index].dim.setValue.u8ChannelTotalNum = RGB_ARRY_SIZE;
 		gBriContex[index].dim.curValue.u8ChannelTotalNum = RGB_ARRY_SIZE;
 		gBriContex[index].dim.outValue.u8ChannelTotalNum = RGB_ARRY_SIZE;
+
+		gBriContex[index].dim.setValue.u16ChannelLvlArry[0] = 0;
+		gBriContex[index].dim.outValue.u16ChannelLvlArry[0] = 0;
+		gBriContex[index].dim.curValue.u16ChannelLvlArry[0] = DIM_DEV_LEVEL_MAX;
 	}
 
 	return 0;

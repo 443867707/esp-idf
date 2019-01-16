@@ -8,6 +8,7 @@
 
 #include "DRV_Gps.h"
 #include "DRV_Gpio.h"
+#include "OS.h"
 
 static uint8_t GpsReceiveData(uint32_t u32Timeout);
 
@@ -15,7 +16,8 @@ static uint8_t GpsReceiveData(uint32_t u32Timeout);
 unsigned char g_GpsSum = 0;  
 unsigned char arryDhIdSep[32] = {0};
 
-SemaphoreHandle_t g_GpsMutex = NULL;
+//SemaphoreHandle_t g_GpsMutex = NULL;
+T_MUTEX g_GpsMutex;
 
 typedef enum _GpsStatus {
     GPS_NO_INIT,
@@ -151,12 +153,12 @@ uint8_t GpsLocationInfoGet(gps_location_info_t *info, uint32_t u32MsTimeout)
     }
 
     //if (xSemaphoreTake(g_GpsMutex, u32MsTimeout) == 0) {
-    if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
-        DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
-        return 3;
-    }
+    //if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
+    //    DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
+    //    return 3;
+    //}
 
-
+	MUTEX_LOCK(g_GpsMutex,MUTEX_WAIT_ALWAYS);
     ret = GpsReceiveData(u32MsTimeout);
 
     if(ret == 0) {
@@ -164,11 +166,13 @@ uint8_t GpsLocationInfoGet(gps_location_info_t *info, uint32_t u32MsTimeout)
         info->NS_Indicator = strGpsInformation.NS_Indicator;	
         memcpy(info->Longitude, strGpsInformation.Longitude, 10 );  	
         info->EW_Indicator = strGpsInformation.EW_Indicator; 		
-        xSemaphoreGive(g_GpsMutex);
+        //xSemaphoreGive(g_GpsMutex);
+		MUTEX_UNLOCK(g_GpsMutex);
         return 0;
     }
 
-    xSemaphoreGive(g_GpsMutex);
+    //xSemaphoreGive(g_GpsMutex);
+	MUTEX_UNLOCK(g_GpsMutex);
     return 4;
 }
 
@@ -198,22 +202,24 @@ uint8_t GpsTimeInfoGet(gps_time_info_t *info, uint32_t u32Timeout)
         return 2;
     }
 
-    if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
-        DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
-        return 3;
-    }
+    //if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
+    //    DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
+    //    return 3;
+    //}
 
-
+	MUTEX_LOCK(g_GpsMutex,MUTEX_WAIT_ALWAYS);
     ret = GpsReceiveData(u32Timeout);
 
     if(ret == 0) {
         memcpy(info->UTC_Time, strGpsInformation.UTC_Time, 6); 
         memcpy(info->UTC_Date, strGpsInformation.UTC_Date, 6);
-        xSemaphoreGive(g_GpsMutex);
+       // xSemaphoreGive(g_GpsMutex);
+       MUTEX_UNLOCK(g_GpsMutex);
         return 0;
     }
 
-    xSemaphoreGive(g_GpsMutex);
+    //xSemaphoreGive(g_GpsMutex);
+	MUTEX_UNLOCK(g_GpsMutex);
     return 4;
 }
 
@@ -489,19 +495,21 @@ uint8_t GpsTest()
 {
     uint8_t u8Ret;
 
-    if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
-        DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
-        return 1;
-    }
-
+    //if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
+    //    DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
+    //    return 1;
+    //}
+	MUTEX_LOCK(g_GpsMutex,MUTEX_WAIT_ALWAYS);
     u8Ret = CheckGpsIsWork();
 	if(u8Ret == 1) {
-        xSemaphoreGive(g_GpsMutex);
+        //xSemaphoreGive(g_GpsMutex);
+        MUTEX_UNLOCK(g_GpsMutex);
         DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "gps not work \n");
         return 2;
     } 
 
-    xSemaphoreGive(g_GpsMutex);
+    //xSemaphoreGive(g_GpsMutex);
+    MUTEX_UNLOCK(g_GpsMutex);
 	return 0;
 }
 
@@ -514,18 +522,19 @@ uint8_t L80Reset(void)
 {
 	int ret;
 
-    if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
-        DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
-        return 1;
-    }
-	
+    //if (xSemaphoreTake(g_GpsMutex, portMAX_DELAY) == 0) {
+    //    DEBUG_LOG(DEBUG_MODULE_GPS, DLL_INFO, "get g_GpsMutex timeout %s:%d \n", __func__, __LINE__);
+    //    return 1;
+    //}
+	MUTEX_LOCK(g_GpsMutex,MUTEX_WAIT_ALWAYS);
 	GpsSetRstGpioLevel(1);
 	vTaskDelay(200 / portTICK_RATE_MS);// rst gpio high level keep more than 100ms
 
     ret = CheckGpsIsWork();
 	if(ret == 0) {
         /*reseting : should be no work, reset fail*/
-        xSemaphoreGive(g_GpsMutex);
+        //xSemaphoreGive(g_GpsMutex);
+        MUTEX_UNLOCK(g_GpsMutex);
         return 1;
     }
 	
@@ -534,12 +543,13 @@ uint8_t L80Reset(void)
 
     ret = CheckGpsIsWork();
 	if(ret != 0) {
-        xSemaphoreGive(g_GpsMutex);
+        //xSemaphoreGive(g_GpsMutex);
+        MUTEX_UNLOCK(g_GpsMutex);
         return 1;
     }
 
-    xSemaphoreGive(g_GpsMutex);
-    
+    //xSemaphoreGive(g_GpsMutex);
+	MUTEX_UNLOCK(g_GpsMutex);
     return 0;
 }
 
@@ -552,14 +562,14 @@ uint8_t GpsUartInit()
 {
     uint8_t u8Ret;
 
-    g_GpsMutex = xSemaphoreCreateMutex();
-
+    /*g_GpsMutex = xSemaphoreCreateMutex();
     if (g_GpsMutex == NULL) {
         DEBUG_LOG(DEBUG_MODULE_GPS, DLL_ERROR, "create g_GpsMutex fail \n");
         return 1;
-    }
-
-    xSemaphoreTake(g_GpsMutex, portMAX_DELAY);
+    }*/
+	MUTEX_CREATE(g_GpsMutex);
+    //xSemaphoreTake(g_GpsMutex, portMAX_DELAY);
+	MUTEX_LOCK(g_GpsMutex,MUTEX_WAIT_ALWAYS);
 
     GpsResetGpioInit();
     BspUartInit(GPS_UART_NUM, 256, 0, GPS_UART_TXD, GPS_UART_RXD);
@@ -574,6 +584,7 @@ uint8_t GpsUartInit()
         u8Ret = 2;
     }
 
-    xSemaphoreGive(g_GpsMutex);
+    //xSemaphoreGive(g_GpsMutex);
+	MUTEX_UNLOCK(g_GpsMutex);
     return u8Ret;
 }

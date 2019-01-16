@@ -24,7 +24,7 @@ extern "C" {
 //#define USE_T_MUTEX
 #ifdef USE_T_MUTEX
 #include "los_mux.h"
-T_MUTEX mutex_Light;
+//T_MUTEX mutex_Light;
 //MUTEX_CREATE(mutex_Light);
 //MUTEX_LOCK(mutex_Light);
 //MUTEX_UNLOCK(mutex_Light);

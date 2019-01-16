@@ -227,6 +227,39 @@ void Command_SetLedLevel(void)
     }
 }
 
+void Command_resetMeter()
+{
+    uint8_t ret;
+    ret = MeterReset();
+    if (ret) {
+	    CLI_PRINTF("reset fail \r\n");
+    } else {
+	    CLI_PRINTF("reset success \r\n");
+    }
+}
+
+void Command_dumpMeterReg()
+{
+    uint8_t ret;
+    ret = MeterDumpReg();
+    if (ret) {
+	    CLI_PRINTF("dump fail \r\n");
+    } else {
+	    CLI_PRINTF("dump success \r\n");
+    }
+}
+
+void Command_reInitMeter()
+{
+    uint8_t ret;
+    ret = MeterReinit();
+    if (ret) {
+	    CLI_PRINTF("reInit fail \r\n");
+    } else {
+	    CLI_PRINTF("reInit success \r\n");
+    }
+}
+
 void Command_ShowHardStatus()
 {
     extern uint16_t g_DacLevel;
@@ -251,6 +284,9 @@ CommandEntry CommandTablBspTest[] =
 	CommandEntryActionWithDetails("sNbRst", Command_SetNbRstPinLevel, "u", "", CommandArguments_NbRstLevel),
 	CommandEntryActionWithDetails("gLighSensor", Command_GetLightSensorVol, "", "", (void*)0),
 	CommandEntryActionWithDetails("sLed", Command_SetLedLevel, "u", "", CommandArguments_LedLevel),
+	CommandEntryActionWithDetails("rstMeter", Command_resetMeter, "", "", (void *)0),
+	CommandEntryActionWithDetails("reInitMeter", Command_reInitMeter, "", "", (void *)0),
+	CommandEntryActionWithDetails("DumpMeterReg", Command_dumpMeterReg, "", "", (void *)0),
 	CommandEntryActionWithDetails("showHardStatus", Command_ShowHardStatus, "", "", (void*)0),
 
 	CommandEntryTerminator()

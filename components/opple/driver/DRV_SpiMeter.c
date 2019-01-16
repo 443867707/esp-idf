@@ -10,6 +10,7 @@
 #include "DRV_SpiMeter.h"
 #include "OPP_Debug.h"
 #include "nvs.h"
+#include "OS.h"
 
 #define VSPI_PIN_NUM_MISO 19 
 #define VSPI_PIN_NUM_MOSI 23 
@@ -40,8 +41,8 @@ typedef enum _MeterInitStatus {
 static MeterInitStatus_t g_MeterInitStatus = METER_INIT_NONE;
 
 spi_device_handle_t g_SpiHandle = NULL;
-SemaphoreHandle_t g_MeterMutex = NULL;
-
+//SemaphoreHandle_t g_MeterMutex = NULL;
+T_MUTEX g_MeterMutex;
 /**
  * @brief  init spi cs pin 
  * @param  none 
@@ -157,6 +158,13 @@ static uint8_t EMUDisWr(void)
     return EmuOP(SPIWrite);
 }
 
+static uint8_t reset_meter(void) 
+{
+    g_EmuConBuf[0] = RESET;  
+    g_EmuConBuf[1] = 0x55;  
+    return EmuOP(SPIWrite);
+}
+
 static uint8_t EMUEnWrEA50(void)
 {
     g_EmuConBuf[0] = 0x7F;
@@ -183,12 +191,14 @@ uint8_t VoltageAdjust(uint32_t U)
     union    B32_B08    temp32;    //结果缓存
     union    B16_B08    temp16;
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex,MUTEX_WAIT_ALWAYS);
     ret = EMUEnWrEA();            //计量芯片写使能
 
     if (ret) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "enable reg writable fail %s:%d\n", __func__, __LINE__);
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+     	MUTEX_UNLOCK(g_MeterMutex);   
         return 1;
     }
     //校准前先清除寄存器
@@ -198,7 +208,8 @@ uint8_t VoltageAdjust(uint32_t U)
     ret = EmuOP(SPIWrite);
     if (ret) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "write reg err %s:%d\n", __func__, __LINE__);
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+     	MUTEX_UNLOCK(g_MeterMutex);           
         return 1;
     }
 
@@ -209,7 +220,8 @@ uint8_t VoltageAdjust(uint32_t U)
     ret = EmuOP(SPIRead);
     if (ret) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "read reg err %s:%d\n", __func__, __LINE__);
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+     	MUTEX_UNLOCK(g_MeterMutex);   
         return 1;
     }
 
@@ -222,7 +234,8 @@ uint8_t VoltageAdjust(uint32_t U)
     temp32.B32 = temp32.B32 * ((double)K_V / 1677721.6);  //1位小数 U = (DATA*K_V*10)/(Gu*2^23) = DATA*(K_V/Gu*1677721.6)    
 
     if (temp32.B32 == 0) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+     	MUTEX_UNLOCK(g_MeterMutex);   
         return 1;
     }
   
@@ -239,7 +252,8 @@ uint8_t VoltageAdjust(uint32_t U)
     g_EmuConBuf[2] = temp32.B08[0];
     ret = EmuOP(SPIWrite);
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+     	MUTEX_UNLOCK(g_MeterMutex);   
         return 1;
     }
 
@@ -247,17 +261,21 @@ uint8_t VoltageAdjust(uint32_t U)
     temp16.B08[1] = temp32.B08[1];
 
     if (VoltageParamWrite(temp16.B16) == 1) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+     	MUTEX_UNLOCK(g_MeterMutex);  
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "voltage adjust param write err\n");
+
         return 1;
     }
   
     ret = EMUDisWr();   //计量芯片写禁止
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+     	MUTEX_UNLOCK(g_MeterMutex);   
         return 1;
     }
-    xSemaphoreGive(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);   
 
     return 0;
 }
@@ -318,11 +336,13 @@ uint8_t PowerAdjust(uint32_t P)
     double   f64ErrData;
     uint8_t  u8Ret;
   
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex,MUTEX_WAIT_ALWAYS);
     //计量芯片写使能
     u8Ret = EMUEnWrEA(); 
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -333,7 +353,8 @@ uint8_t PowerAdjust(uint32_t P)
     u8Ret = EmuOP(SPIWrite);  
     if (u8Ret) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "write err %s:%d \n", __func__, __LINE__);
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;    
     }
 
@@ -341,7 +362,8 @@ uint8_t PowerAdjust(uint32_t P)
 
     u8Ret = GetErrData(P, &f64ErrData);//计算误差
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -360,13 +382,15 @@ uint8_t PowerAdjust(uint32_t P)
 
     u8Ret = EmuOP(SPIWrite);
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;     
     }
 
     u8Ret = EMUDisWr();   //计量芯片写禁止
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -375,12 +399,13 @@ uint8_t PowerAdjust(uint32_t P)
 
     if (PowerParamWrite(temp16.B16) == 1) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "power adjust param write err\n");
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
-    xSemaphoreGive(g_MeterMutex);
-
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;  
 }
 
@@ -396,11 +421,13 @@ uint8_t BPhCalAdjust(uint32_t P)
     double   f64ErrData;
     uint8_t  u8Ret;
   
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     //计量芯片写使能
     u8Ret = EMUEnWrEA(); 
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -410,7 +437,8 @@ uint8_t BPhCalAdjust(uint32_t P)
     u8Ret = EmuOP(SPIWrite);  
     if (u8Ret) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "write err %s:%d \n", __func__, __LINE__);
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;    
     }
 
@@ -418,7 +446,8 @@ uint8_t BPhCalAdjust(uint32_t P)
 
     u8Ret = GetErrData(P, &f64ErrData);//计算误差
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -435,24 +464,27 @@ uint8_t BPhCalAdjust(uint32_t P)
 
     u8Ret = EmuOP(SPIWrite);
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;     
     }
 
     u8Ret = EMUDisWr();   //计量芯片写禁止
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
     if (BPhCalParamWrite(temp32.B08[0]) == 1) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "BPhCal adjust param write err\n");
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
-    xSemaphoreGive(g_MeterMutex);
-
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;  
 }
 
@@ -469,12 +501,14 @@ uint8_t CurrentAdjust(uint32_t I)
     union   B16_B08  temp16;
     uint8_t u8Ret, i;
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
 
     //打开计量写使能
     u8Ret = EMUEnWrEA(); 
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -484,7 +518,8 @@ uint8_t CurrentAdjust(uint32_t I)
     g_EmuConBuf[2] = 0;
     u8Ret = EmuOP(SPIWrite);  
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1; 
     }
     vTaskDelay(700 / portTICK_RATE_MS); // reg refresh time is 320 ms
@@ -493,7 +528,8 @@ uint8_t CurrentAdjust(uint32_t I)
     g_EmuConBuf[0] = IBRMS;  
     u8Ret = EmuOP(SPIRead);
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
          
@@ -522,13 +558,15 @@ uint8_t CurrentAdjust(uint32_t I)
     g_EmuConBuf[2] = temp32.B08[0];
     u8Ret = EmuOP(SPIWrite);
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;     
     }
 
     u8Ret = EMUDisWr();   //计量芯片写禁止
     if (u8Ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -537,12 +575,13 @@ uint8_t CurrentAdjust(uint32_t I)
 
     if (CurrentParamWrite(temp16.B16) == 1) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "current adjust param write err\n");
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
-    xSemaphoreGive(g_MeterMutex);
-
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;
 }
 
@@ -562,12 +601,13 @@ uint8_t CurrentParamGet(uint16_t *IbGain)
         return 1;
     }
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     err = nvs_open("MeterParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -579,13 +619,15 @@ uint8_t CurrentParamGet(uint16_t *IbGain)
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "read IbGain fail \n");
         *IbGain = 0;
         nvs_close(my_handle);
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
 
         return 1; 
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
 
     return 0;
 }
@@ -606,12 +648,13 @@ uint8_t VoltageParamGet(uint16_t *Ugain)
     }
 
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     err = nvs_open("MeterParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -622,14 +665,14 @@ uint8_t VoltageParamGet(uint16_t *Ugain)
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "read Ugain fail \n");
         *Ugain = 0;
         nvs_close(my_handle);
-        xSemaphoreGive(g_MeterMutex);
-
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_MeterMutex);
-    
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;
 }
 
@@ -649,12 +692,13 @@ uint8_t PowerParamGet(uint16_t *PbGain)
         return 1;
     }
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     err = nvs_open("MeterParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -664,14 +708,14 @@ uint8_t PowerParamGet(uint16_t *PbGain)
     } else {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "read Ugain err \n");
         nvs_close(my_handle);
-        xSemaphoreGive(g_MeterMutex);
-
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_MeterMutex);
-
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;
 }
 
@@ -691,12 +735,13 @@ uint8_t BPhCalParamGet(uint8_t *BPhCal)
         return 1;
     }
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     err = nvs_open("MeterParam", NVS_READWRITE, &my_handle);
 
     if (err != ESP_OK) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -706,14 +751,14 @@ uint8_t BPhCalParamGet(uint8_t *BPhCal)
     } else {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "read BPhCal err \n");
         nvs_close(my_handle);
-        xSemaphoreGive(g_MeterMutex);
-
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
     nvs_close(my_handle);
-    xSemaphoreGive(g_MeterMutex);
-
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;
 }
 
@@ -759,11 +804,11 @@ uint8_t CurrentParamSet(uint16_t IbGain)
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     u8Ret = CurrentParamWrite(IbGain);
-
-    xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
     return u8Ret;
 }
 
@@ -811,11 +856,11 @@ uint8_t VoltageParamSet(uint16_t Ugain)
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     u8Ret = VoltageParamWrite(Ugain);
-
-    xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
     return u8Ret;
 }
 
@@ -863,11 +908,11 @@ uint8_t PowerParamSet(uint16_t PbGain)
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     u8Ret = PowerParamWrite(PbGain);
-
-    xSemaphoreGive(g_MeterMutex);
+    MUTEX_UNLOCK(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
     return u8Ret;
 }
 
@@ -912,11 +957,11 @@ uint8_t BPhCalParamSet(uint8_t u8BPhCal)
 {
     uint8_t u8Ret;
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     u8Ret = BPhCalParamWrite(u8BPhCal);
-
-    xSemaphoreGive(g_MeterMutex);
+    MUTEX_UNLOCK(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
     return u8Ret;
 }
 
@@ -926,8 +971,13 @@ uint8_t delAdjustParam()
 
     nvs_handle my_handle;
 
+	
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
+
     err = nvs_open("MeterParam", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
+		
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
 
@@ -935,6 +985,8 @@ uint8_t delAdjustParam()
     if (err != ESP_OK) {
         if (err != ESP_ERR_NVS_NOT_FOUND) {
             nvs_close(my_handle);
+			
+			MUTEX_UNLOCK(g_MeterMutex);
             return 1;
         }
     }
@@ -943,6 +995,8 @@ uint8_t delAdjustParam()
     if (err != ESP_OK) {
         if (err != ESP_ERR_NVS_NOT_FOUND) {
             nvs_close(my_handle);
+			
+			MUTEX_UNLOCK(g_MeterMutex);
             return 1;
         }
     }
@@ -951,6 +1005,8 @@ uint8_t delAdjustParam()
     if (err != ESP_OK) {
         if (err != ESP_ERR_NVS_NOT_FOUND) {
             nvs_close(my_handle);
+			
+			MUTEX_UNLOCK(g_MeterMutex);
             return 1;
         }
     }
@@ -959,6 +1015,8 @@ uint8_t delAdjustParam()
     if (err != ESP_OK) {
         if (err != ESP_ERR_NVS_NOT_FOUND) {
             nvs_close(my_handle);
+			
+			MUTEX_UNLOCK(g_MeterMutex);
             return 1;
         }
     }
@@ -966,10 +1024,14 @@ uint8_t delAdjustParam()
     err = nvs_commit(my_handle);
     if (err != ESP_OK) {
         nvs_close(my_handle);
+		
+		MUTEX_UNLOCK(g_MeterMutex);
         return 1;
     }
     
     nvs_close(my_handle);
+	
+    MUTEX_UNLOCK(g_MeterMutex);
 
     return 0;
 }
@@ -1096,6 +1158,26 @@ static uint8_t EmuInitial(void)
     if (ret) {
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR,"enable write err \n");
         return 1;
+    }
+
+    vTaskDelay(SPI_RW_DELAY_TIME_MS / portTICK_RATE_MS);
+    g_EmuConBuf[0] = RESET;
+    ret = EmuSPIOp(SPIRead);
+    if (ret) {
+        DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
+        return 1; // 1 --> fail, 0 success
+    }
+
+    if (g_EmuConBuf[1] == 0x55) {
+
+        vTaskDelay(SPI_RW_DELAY_TIME_MS / portTICK_RATE_MS);
+        g_EmuConBuf[0] = RESET;
+        g_EmuConBuf[1] = 0x00;
+        ret = EmuOP(SPIWrite);
+        if (ret) {
+		    DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR,"write err %s:%d \n", __func__, __LINE__);
+            return 1;
+        }
     }
 
     vTaskDelay(SPI_RW_DELAY_TIME_MS / portTICK_RATE_MS);
@@ -1289,21 +1371,23 @@ uint8_t MeterInstantInfoGet(meter_info_t *info)
         return 1;		
     }
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     if (g_MeterInitStatus != METER_INIT_SUCCESS) {
         if (g_MeterInitStatus == METER_INIT_REG_FAIL) {
             DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "Meter reg is not init\n");
             if (EmuInitial() == 1) {
                 DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "reinit init Meter reg err\n");
-                xSemaphoreGive(g_MeterMutex);
+                //xSemaphoreGive(g_MeterMutex);
+                MUTEX_UNLOCK(g_MeterMutex);
                 return 1;
             }
 
             g_MeterInitStatus = METER_INIT_SUCCESS;
         } else {
             DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "Meter init fail \n");
-            xSemaphoreGive(g_MeterMutex);
+			MUTEX_UNLOCK(g_MeterMutex);
+            //xSemaphoreGive(g_MeterMutex);
 	        return 1;
 	    }
     }
@@ -1313,7 +1397,8 @@ uint8_t MeterInstantInfoGet(meter_info_t *info)
     ret = EmuOP(SPIRead);
 
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 1; // 1 --> fail, 0 success
     }
@@ -1336,8 +1421,8 @@ uint8_t MeterInstantInfoGet(meter_info_t *info)
         if (EmuInitial() == 1) {
             g_MeterInitStatus = METER_INIT_REG_FAIL;
         }
-        
-        xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
 
         return 1; 
     }
@@ -1346,7 +1431,8 @@ uint8_t MeterInstantInfoGet(meter_info_t *info)
     g_EmuConBuf[0] = IBRMS;
     ret = EmuOP(SPIRead);
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 1; // 1 --> fail, 0 success
     }
@@ -1362,7 +1448,8 @@ uint8_t MeterInstantInfoGet(meter_info_t *info)
     g_EmuConBuf[0] = URMS;
     ret = EmuOP(SPIRead);
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+        MUTEX_UNLOCK(g_MeterMutex);
         DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 1; // 1 --> fail, 0 success
     }
@@ -1376,13 +1463,13 @@ uint8_t MeterInstantInfoGet(meter_info_t *info)
 
     /*电压大于最大有效值*/
     if (info->u32Voltage > MAX_VALID_VOLTAGE) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
         DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "volage is invalid %u \r\n", info->u32Voltage);
         
         if (EmuInitial() == 1) {
             g_MeterInitStatus = METER_INIT_REG_FAIL;
         }
-
+        MUTEX_UNLOCK(g_MeterMutex);
         return 1; // 1 --> fail, 0 success
     }
  
@@ -1393,10 +1480,13 @@ uint8_t MeterInstantInfoGet(meter_info_t *info)
         
     } else {
         info->u32PowerFactor = 1000 * ((double)info->u32Power / (info->u32Voltage * info->u32Current)); // 将小数 *1000 转化成整数
+        if (info->u32PowerFactor > 1000) {
+            info->u32PowerFactor = 1000;
+        }
     }
 
-    xSemaphoreGive(g_MeterMutex);
-    
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;
 }
 
@@ -1415,21 +1505,23 @@ uint8_t MeterEnergyInfoGet(uint16_t *pEnergy)
         return 1;		
     }
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     if (g_MeterInitStatus != METER_INIT_SUCCESS) {
         if (g_MeterInitStatus == METER_INIT_REG_FAIL) {
             DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "Meter reg is not init\n");
             if (EmuInitial() == 1) {
                 DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "reinit init Meter reg err\n");
-                xSemaphoreGive(g_MeterMutex);
+                //xSemaphoreGive(g_MeterMutex);
+				MUTEX_UNLOCK(g_MeterMutex);
                 return 1;
             }
 
             g_MeterInitStatus = METER_INIT_SUCCESS;
         } else {
             DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "Meter init fail \n");
-            xSemaphoreGive(g_MeterMutex);
+            //xSemaphoreGive(g_MeterMutex);
+			MUTEX_UNLOCK(g_MeterMutex);
 	        return 1;
 	    }
     }
@@ -1439,7 +1531,8 @@ uint8_t MeterEnergyInfoGet(uint16_t *pEnergy)
     ret = EmuSPIOp(SPIRead);
 
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 2; // 1 --> fail, 0 success
     }
@@ -1448,8 +1541,153 @@ uint8_t MeterEnergyInfoGet(uint16_t *pEnergy)
     temp16.B08[1] = g_EmuConBuf[1];
     *pEnergy = temp16.B16;
 
-    xSemaphoreGive(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);    
     return 0;
+}
+
+static uint8_t MeterDumpRetByte1()
+{
+    uint8_t ret, i;
+
+    for (i = 0x00; i <= 0x0c; i ++ ) {
+        g_EmuConBuf[0] = i;
+        ret = EmuSPIOp(SPIRead);
+        if (ret) {
+            DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
+            return 1; // 1 --> fail, 0 success
+        }
+        vTaskDelay(SPI_RW_DELAY_TIME_MS / portTICK_RATE_MS);
+        printf("%02x: %02x \n", g_EmuConBuf[0], g_EmuConBuf[1]);
+    }
+
+    return 0;
+}
+
+static uint8_t MeterDumpRetByte2()
+{
+
+    uint8_t ret, i;
+
+    for (i = 0x10; i <= 0x1d; i ++ ) {
+        g_EmuConBuf[0] = i;
+        ret = EmuSPIOp(SPIRead);
+        if (ret) {
+            DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
+            return 1; // 1 --> fail, 0 success
+        }
+        vTaskDelay(SPI_RW_DELAY_TIME_MS / portTICK_RATE_MS);
+        printf("%02x: %02x %02x \n", g_EmuConBuf[0], g_EmuConBuf[1], g_EmuConBuf[2]);
+    }
+
+    for (i = 0x20; i <= 0x2f; i ++ ) {
+        g_EmuConBuf[0] = i;
+        ret = EmuSPIOp(SPIRead);
+        if (ret) {
+            DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
+            return 1; // 1 --> fail, 0 success
+        }
+        vTaskDelay(SPI_RW_DELAY_TIME_MS / portTICK_RATE_MS);
+        printf("%02x: %02x %02x \n", g_EmuConBuf[0], g_EmuConBuf[1], g_EmuConBuf[2]);
+    }
+
+    return 0;
+}
+
+static uint8_t MeterDumpRetByte3()
+{
+    uint8_t ret, i;
+
+    for (i = 0x30; i <= 0x32; i ++ ) {
+        g_EmuConBuf[0] = i;
+        ret = EmuOP(SPIRead);
+        if (ret) {
+            DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
+            return 1; // 1 --> fail, 0 success
+        }
+
+        printf("%02x: %02x %02x %02x \n", g_EmuConBuf[0], g_EmuConBuf[1],g_EmuConBuf[2], g_EmuConBuf[3]);
+
+    }
+
+    return 0;
+}
+
+static uint8_t MeterDumpRetByte4()
+{
+    uint8_t ret, i;
+
+    for (i = 0x40; i <= 0x46; i ++ ) {
+        g_EmuConBuf[0] = i;
+        ret = EmuOP(SPIRead);
+        if (ret) {
+            DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
+            return 1; // 1 --> fail, 0 success
+        }
+
+        printf("%02x: %02x %02x %02x %02x \n", g_EmuConBuf[0], g_EmuConBuf[1],g_EmuConBuf[2], g_EmuConBuf[3], g_EmuConBuf[4]);
+
+    }
+
+    return 0;
+}
+
+uint8_t MeterDumpReg() 
+{
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
+    MeterDumpRetByte1();
+    MeterDumpRetByte2();
+    MeterDumpRetByte3();
+    MeterDumpRetByte4();
+	MUTEX_UNLOCK(g_MeterMutex);    
+    //xSemaphoreGive(g_MeterMutex);
+    return 0;
+}
+
+uint8_t MeterReinit() 
+{
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
+    if (EmuInitial() == 1) {
+        DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "reinit init Meter reg err\n");
+		MUTEX_UNLOCK(g_MeterMutex);    
+        //xSemaphoreGive(g_MeterMutex);
+        return 1;
+    }
+	MUTEX_UNLOCK(g_MeterMutex);    
+    //xSemaphoreGive(g_MeterMutex);
+    return 0;
+}
+
+
+uint8_t MeterReset() 
+{
+    uint8_t ret;
+
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
+    ret = EMUEnWrEA(); 
+    if (ret) {
+        DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR,"enable write err \n");
+		MUTEX_UNLOCK(g_MeterMutex);		
+        return 1;
+    }
+
+    ret = reset_meter();    
+    if (ret == 1) {
+        DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "reset meter err\n");
+    }
+
+    ret = EMUDisWr();   //计量芯片写禁止
+    if (ret) {
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);    
+        return 1;
+    }
+    //xSemaphoreGive(g_MeterMutex);    
+	MUTEX_UNLOCK(g_MeterMutex);    
+    return ret;
 }
 
 /*
@@ -1468,21 +1706,23 @@ uint8_t MeterInfoGet(meter_info_t *info)
         return 1;		
     }
 
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     if (g_MeterInitStatus != METER_INIT_SUCCESS) {
         if (g_MeterInitStatus == METER_INIT_REG_FAIL) {
             DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "Meter reg is not init\n");
             if (EmuInitial() == 1) {
                 DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "reinit init Meter reg err\n");
-                xSemaphoreGive(g_MeterMutex);
+                //xSemaphoreGive(g_MeterMutex);
+				MUTEX_UNLOCK(g_MeterMutex);    
                 return 1;
             }
 
             g_MeterInitStatus = METER_INIT_SUCCESS;
         } else {
             DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_INFO, "Meter init fail \n");
-            xSemaphoreGive(g_MeterMutex);
+            //xSemaphoreGive(g_MeterMutex);
+			MUTEX_UNLOCK(g_MeterMutex);    
 	        return 1;
 	    }
     }
@@ -1492,7 +1732,8 @@ uint8_t MeterInfoGet(meter_info_t *info)
     ret = EmuSPIOp(SPIRead);
 
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);        
+		MUTEX_UNLOCK(g_MeterMutex);    
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 2; // 1 --> fail, 0 success
     }
@@ -1506,7 +1747,8 @@ uint8_t MeterInfoGet(meter_info_t *info)
     ret = EmuOP(SPIRead);
 
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);    
         DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 1; // 1 --> fail, 0 success
     }
@@ -1530,7 +1772,8 @@ uint8_t MeterInfoGet(meter_info_t *info)
             g_MeterInitStatus = METER_INIT_REG_FAIL;
         }
 
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);    
         return 1; 
     }
 		 
@@ -1538,7 +1781,8 @@ uint8_t MeterInfoGet(meter_info_t *info)
     g_EmuConBuf[0] = IBRMS;
     ret = EmuOP(SPIRead);
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);    
         DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 1; // 1 --> fail, 0 success
     }
@@ -1554,7 +1798,8 @@ uint8_t MeterInfoGet(meter_info_t *info)
     g_EmuConBuf[0] = URMS;
     ret = EmuOP(SPIRead);
     if (ret) {
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);    
         DEBUG_LOG(DEBUG_MODULE_METER, DLL_ERROR, "read err %s:%d\n", __func__, __LINE__);
         return 1; // 1 --> fail, 0 success
     }
@@ -1574,7 +1819,8 @@ uint8_t MeterInfoGet(meter_info_t *info)
             g_MeterInitStatus = METER_INIT_REG_FAIL;
         }
 
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);    
         return 1; // 1 --> fail, 0 success
     }
  
@@ -1584,11 +1830,13 @@ uint8_t MeterInfoGet(meter_info_t *info)
         
     } else {
         info->u32PowerFactor = 1000 * ((double)info->u32Power / (info->u32Voltage * info->u32Current)); // 将小数 *1000 转化成整数
+        if (info->u32PowerFactor > 1000) {
+            info->u32PowerFactor = 1000;
+        }
     }
 
-
-    xSemaphoreGive(g_MeterMutex);
-    
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);    
     return 0;
 }
 
@@ -1779,27 +2027,29 @@ uint8_t MeterInit(void)
 {
     uint8_t u8Ret;
 
-    g_MeterMutex = xSemaphoreCreateMutex();
+    /*g_MeterMutex = xSemaphoreCreateMutex();
 
     if (g_MeterMutex == NULL) {
         g_MeterInitStatus = METER_INIT_MUTEX_FAIL;
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "create g_MeterMutex fail \n");
         return 1;
-    }
-
-    xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
-
+    }*/
+	MUTEX_CREATE(g_MeterMutex);
+    //xSemaphoreTake(g_MeterMutex, portMAX_DELAY); 
+    MUTEX_LOCK(g_MeterMutex, MUTEX_WAIT_ALWAYS);
     u8Ret = SpiCsGpioInit();
     if (u8Ret) {
-        DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "init Meter spi cs pnerr\n");
         g_MeterInitStatus = METER_INIT_SPI_FAIL;
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
+		DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "init Meter spi cs pnerr\n");		
         return 1;
     }
 
     if (Drt6020SpiInit() != 0) {
         g_MeterInitStatus = METER_INIT_SPI_FAIL;
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "init Meter spi err\n");
         return 1;
     }
@@ -1809,13 +2059,15 @@ uint8_t MeterInit(void)
 
     if (EmuInitial() == 1) {
         g_MeterInitStatus = METER_INIT_REG_FAIL;
-        xSemaphoreGive(g_MeterMutex);
+        //xSemaphoreGive(g_MeterMutex);
+		MUTEX_UNLOCK(g_MeterMutex);
         DEBUG_LOG(DEBUG_MODULE_ELEC, DLL_ERROR, "init Meter reg err\n");
         return 1;
     }
 
     g_MeterInitStatus = METER_INIT_SUCCESS;
-    xSemaphoreGive(g_MeterMutex);
+    //xSemaphoreGive(g_MeterMutex);
+	MUTEX_UNLOCK(g_MeterMutex);
     return 0;
 }
 

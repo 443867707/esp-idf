@@ -1034,6 +1034,7 @@ int TimeSet(U8 year, U8 month, U8 day, U8 hour, U8 min, U8 second, S8 zone)
 	MUTEX_LOCK(g_ulTimeSem, MUTEX_WAIT_ALWAYS);
 
 	if(month > 12 || day > 31 || hour > 23 || min > 60 || second > 60 || zone > 12 || zone < -12){
+		MUTEX_UNLOCK(g_ulTimeSem);		
 		return OPP_FAILURE;
 	}
 	

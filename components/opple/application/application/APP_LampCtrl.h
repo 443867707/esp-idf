@@ -57,8 +57,8 @@
 #define MANU                           "OPPLE"
 
 //配置数据的版本号
-#define OPP_LAMP_CTRL_CFG_DATA_VER     (784)
-#define OPP_LAMP_CTRL_CFG_DATA_VER_STR "784"
+#define OPP_LAMP_CTRL_CFG_DATA_VER     (786)
+#define OPP_LAMP_CTRL_CFG_DATA_VER_STR "786"
 #define OPP_LAMP_CTRL_CFG_DATA_MAX_VER  (0xFFFF)
         
 #define PRODUCTCLASS                 0xF011                
@@ -95,6 +95,8 @@
 #define EXEP_LOW_PWR        35
 //100mW
 #define EXEP_HIGH_PWR       40
+#define MAX_LAMP_PWR        300
+
 //获取百位数
 #define OPP_HUNDRED_OF_NUMBER(x)                    ((x) / 100)
 //获取十位数
@@ -464,5 +466,6 @@ U32 OppLampCtrlLightOnOff(int onOff);
 void OppLampDelayInfo(U8 * srcChl, U8 * sw);
 void OppLampActTimeGet(char *buf);
 void OppLampActTimeSet(char *buf);
+U32 OppLampCtrlGetExepPwr();
 
 #endif

@@ -5188,7 +5188,7 @@ int uart_data_read(char *buf, int maxrlen, int mode, int timeout)
 		DEBUG_LOG(DEBUG_MODULE_BC28, DLL_ERROR, "%s %d\r\n", __FUNCTION__, __LINE__);
         return 0;
     }
-	while(1){
+	//while(1){
 		BaseType_t r = OS_SEMAPHORE_TAKE(g_NbRxSem,timeout);
 		if (r == pdFALSE){
 			//printf("uart_data_read take sem timeout\r\n");
@@ -5199,7 +5199,7 @@ int uart_data_read(char *buf, int maxrlen, int mode, int timeout)
 			//printf("uart_data_read: %s\r\n", buf);
 			return retlen;
 		}
-	}
+	//}
 
     return retlen;
 }

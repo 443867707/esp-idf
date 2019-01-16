@@ -405,4 +405,9 @@ uint8_t CurrentParamGet(uint16_t *IbGain);
 uint8_t BPhCalParamGet(uint8_t *BPhCal);
 
 uint8_t delAdjustParam(void); 
+
+uint8_t MeterReinit();
+uint8_t MeterReset();
+uint8_t MeterDumpReg();
+
 #endif

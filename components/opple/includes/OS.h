@@ -49,11 +49,21 @@
     #define MUTEX_UNLOCK(mutex)         LOS_MuxPost(mutex)         // xSemaphoreGive((mutex))
     #define MUTEX_WAIT_ALWAYS           
 #elif defined(PLATFORM_OS_FREERTOS)
-    #define T_MUTEX                     xSemaphoreHandle    
-    #define MUTEX_CREATE(mutex)         mutex=xSemaphoreCreateMutex()
+    /*#define T_MUTEX                     xSemaphoreHandle    
+    #define MUTEX_CREATE(mutex)         do{mutex=xSemaphoreCreateBinary(); xSemaphoreGive(mutex);}while(0)    //mutex=xSemaphoreCreateMutex()
     #define MUTEX_LOCK(mutex,timeout)   xSemaphoreTake((mutex),timeout)
     #define MUTEX_UNLOCK(mutex)         xSemaphoreGive((mutex))
-    #define MUTEX_WAIT_ALWAYS           portMAX_DELAY
+    #define MUTEX_WAIT_ALWAYS           portMAX_DELAY*/
+	/*#define T_MUTEX                    xSemaphoreHandle 
+    #define MUTEX_CREATE(mutex)        
+    #define MUTEX_LOCK(mutex,timeout)   
+    #define MUTEX_UNLOCK(mutex)         
+    #define MUTEX_WAIT_ALWAYS*/
+	#define T_MUTEX					  	xSemaphoreHandle	  
+	#define MUTEX_CREATE(mutex) 		do{mutex=xSemaphoreCreateBinary(); xSemaphoreGive(mutex);}while(0)	  //mutex=xSemaphoreCreateMutex()
+	#define MUTEX_LOCK(mutex,timeout)	xSemaphoreTake((mutex),timeout)
+	#define MUTEX_UNLOCK(mutex) 		xSemaphoreGive((mutex))
+	#define MUTEX_WAIT_ALWAYS			portMAX_DELAY
 #elif defined(PLATFORM_OS_NONE)
     #define T_MUTEX                     unsigned int         
     #define MUTEX_CREATE(mutex)     
