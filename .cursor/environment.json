@@ -1,0 +1,4 @@
+{
+  "name": "ESP-IDF (ESP32) build environment",
+  "install": "bash .cursor/install.sh"
+}
